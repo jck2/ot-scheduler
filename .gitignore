@@ -1,0 +1,7 @@
+node_modules
+dist
+*.xlsx
+*.csv
+*.png.tmp
+Screenshot*
+tsconfig.tsbuildinfo
