@@ -45,8 +45,8 @@ export function ScheduleView() {
   const config = useAppStore((s) => s.config);
   const validationErrors = useAppStore((s) => s.validationErrors);
   const setValidationErrors = useAppStore((s) => s.setValidationErrors);
-  const showOtherProviders = useAppStore((s) => s.showOtherProviders);
-  const setShowOtherProviders = useAppStore((s) => s.setShowOtherProviders);
+  const providerView = useAppStore((s) => s.providerView);
+  const setProviderView = useAppStore((s) => s.setProviderView);
   const excludedStudentIds = useAppStore((s) => s.excludedStudentIds);
   const toggleExcludedStudent = useAppStore((s) => s.toggleExcludedStudent);
   const addSession = useAppStore((s) => s.addSession);
@@ -318,16 +318,25 @@ export function ScheduleView() {
                 </span>
               )}
               <ColorKey />
-              <button
-                onClick={() => setShowOtherProviders(!showOtherProviders)}
-                className={`text-sm px-2 py-0.5 rounded border transition-colors ${
-                  showOtherProviders
-                    ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                    : 'bg-gray-100 border-gray-300 text-gray-500'
-                }`}
-              >
-                Other Providers
-              </button>
+              <div className="inline-flex rounded border border-gray-300 text-sm overflow-hidden">
+                {(['self', 'both', 'others'] as const).map((view) => {
+                  const labels = { self: 'Mine', both: 'Both', others: 'Others' };
+                  const isActive = providerView === view;
+                  return (
+                    <button
+                      key={view}
+                      onClick={() => setProviderView(view)}
+                      className={`px-2 py-0.5 transition-colors ${
+                        isActive
+                          ? 'bg-indigo-100 text-indigo-700'
+                          : 'bg-white text-gray-500 hover:bg-gray-50'
+                      } ${view !== 'self' ? 'border-l border-gray-300' : ''}`}
+                    >
+                      {labels[view]}
+                    </button>
+                  );
+                })}
+              </div>
               {excludedStudents.length > 0 && (
                 <span className="flex items-center gap-1 text-xs text-gray-500">
                   Hidden:

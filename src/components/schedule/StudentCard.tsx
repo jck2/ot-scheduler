@@ -63,35 +63,32 @@ export function StudentCard({
     session.studentIds.map((id) => studentMap.get(id)?.className ?? '?')
   );
 
-  const tooltipLines = [
+  const actualErrors = errors.filter((e) => e.severity === 'error');
+  const warnings = errors.filter((e) => e.severity === 'warning');
+  const hasActualError = actualErrors.length > 0;
+  const hasWarning = warnings.length > 0;
+
+  // Build tooltip lines
+  const tooltipParts: string[] = [
     typeDescription,
     `${session.day} ${minutesToTime(session.startTime)}\u2013${minutesToTime(session.endTime)}`,
     `Students: ${fullNames.join(', ')}`,
     `Class: ${Array.from(classes).join(', ')}`,
   ];
-
-  const actualErrors = errors.filter((e) => e.severity === 'error');
-  const warnings = errors.filter((e) => e.severity === 'warning');
-
   if (actualErrors.length > 0) {
-    tooltipLines.push('', 'ERRORS:');
-    for (const err of actualErrors) tooltipLines.push(`\u2022 ${err.message}`);
+    tooltipParts.push('');
+    for (const err of actualErrors) tooltipParts.push(`\u2022 ${err.message}`);
   }
   if (warnings.length > 0) {
-    tooltipLines.push('', 'WARNINGS:');
-    for (const w of warnings) tooltipLines.push(`\u2022 ${w.message}`);
+    tooltipParts.push('');
+    for (const w of warnings) tooltipParts.push(`\u2022 ${w.message}`);
   }
-
-  const tooltip = tooltipLines.join('\n');
-  const hasActualError = actualErrors.length > 0;
-  const hasWarning = warnings.length > 0;
 
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      title={tooltip}
       style={{ opacity: isDragging ? 0.4 : 1 }}
       className={`bg-indigo-50 border border-indigo-200 rounded px-2 py-0.5 text-xs cursor-grab active:cursor-grabbing group/card relative ${
         isGroup ? `border-l-[3px] ${groupBorder}` : ''
@@ -99,8 +96,8 @@ export function StudentCard({
     >
       <div className="flex items-center justify-between gap-1">
         <span className="font-medium text-gray-800 truncate">
-          {hasActualError && <span className="text-red-500 mr-0.5" title="Has errors">!!</span>}
-          {!hasActualError && hasWarning && <span className="text-amber-500 mr-0.5" title="Has warnings">!</span>}
+          {hasActualError && <span className="text-red-500 mr-0.5">!!</span>}
+          {!hasActualError && hasWarning && <span className="text-amber-500 mr-0.5">!</span>}
           {firstName}
         </span>
         <span className="flex items-center gap-0.5 shrink-0">
@@ -108,6 +105,14 @@ export function StudentCard({
             <span className="text-[9px] text-gray-400 font-mono">[{session.studentIds.length}]</span>
           )}
         </span>
+      </div>
+      {/* CSS hover tooltip — works even with drag listeners */}
+      <div className="pointer-events-none absolute left-0 bottom-full mb-1 z-50 hidden group-hover/card:block">
+        <div className="bg-gray-900 text-white text-[10px] leading-snug rounded px-2 py-1.5 shadow-lg whitespace-pre-wrap max-w-[220px]">
+          {tooltipParts.map((line, i) => (
+            <div key={i}>{line || '\u00A0'}</div>
+          ))}
+        </div>
       </div>
       <button
         onClick={(e) => {

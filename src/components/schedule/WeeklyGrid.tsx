@@ -17,7 +17,7 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
     config,
     validationErrors,
     providerSchedules,
-    showOtherProviders,
+    providerView,
     excludedStudentIds,
     toggleExcludedStudent,
   } = useAppStore();
@@ -36,7 +36,7 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
   const timeRows = useMemo(() => {
     let effectiveStart = config.startTime;
 
-    if (showOtherProviders && providerSchedules.length > 0) {
+    if (providerView !== 'self' && providerSchedules.length > 0) {
       let earliest = config.startTime;
       for (const ps of providerSchedules) {
         for (const ext of ps.sessions) {
@@ -54,7 +54,7 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
       rows.push(t);
     }
     return rows;
-  }, [config, showOtherProviders, providerSchedules]);
+  }, [config, providerView, providerSchedules]);
 
   const errorsBySessionId = useMemo(() => {
     const map = new Map<string, ValidationError[]>();
@@ -101,7 +101,7 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
   }, [students]);
 
   const externalSessionsByCell = useMemo(() => {
-    if (!showOtherProviders) return new Map<string, { session: ExternalSession; providerName: string; colorIdx: number; matchedNames: { name: string; studentIds: string[] }[] }[]>();
+    if (providerView === 'self') return new Map<string, { session: ExternalSession; providerName: string; colorIdx: number; matchedNames: { name: string; studentIds: string[] }[] }[]>();
 
     const isOtSheet = (name: string) => /\bOT\b/i.test(name);
     const otherProviders = providerSchedules.filter(
@@ -184,7 +184,7 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
       }
     });
     return map;
-  }, [showOtherProviders, providerSchedules, amandaSheetName, students, nameIndex, fullNameIndex, initialsIndex, config, timeRows, excludedStudentIds]);
+  }, [providerView, providerSchedules, amandaSheetName, students, nameIndex, fullNameIndex, initialsIndex, config, timeRows, excludedStudentIds]);
 
   return (
     <div className="overflow-auto h-full">
@@ -234,9 +234,9 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
 
               {/* Day cells */}
               {sortedDays.map((day) => {
-                const cellSessions = sessions.filter(
-                  (s) => s.day === day && s.startTime === time
-                );
+                const cellSessions = providerView === 'others'
+                  ? []
+                  : sessions.filter((s) => s.day === day && s.startTime === time);
 
                 const cellExternals = externalSessionsByCell.get(`${day}-${time}`) ?? [];
 

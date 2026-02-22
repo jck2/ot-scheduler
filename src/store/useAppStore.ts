@@ -57,8 +57,8 @@ interface AppState {
   setValidationErrors: (errors: ValidationError[]) => void;
 
   // Other providers overlay
-  showOtherProviders: boolean;
-  setShowOtherProviders: (show: boolean) => void;
+  providerView: 'self' | 'others' | 'both';
+  setProviderView: (view: 'self' | 'others' | 'both') => void;
 
   // Student exclusion from overlay
   excludedStudentIds: string[];
@@ -183,8 +183,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   validationErrors: [],
   setValidationErrors: (validationErrors) => set({ validationErrors }),
 
-  showOtherProviders: true,
-  setShowOtherProviders: (showOtherProviders) => set({ showOtherProviders }),
+  providerView: 'both' as const,
+  setProviderView: (providerView) => set({ providerView }),
 
   excludedStudentIds: [],
   toggleExcludedStudent: (studentId) => {

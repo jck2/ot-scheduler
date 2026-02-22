@@ -1,6 +1,7 @@
 import { useAppStore } from '@/store/useAppStore';
 import { generateSchedule } from '@/scheduling/algorithm';
 import { validateSchedule } from '@/scheduling/validator';
+import type { Student } from '@/types';
 
 export function ModeSelector() {
   const {
@@ -9,6 +10,7 @@ export function ModeSelector() {
     config,
     providerSchedules,
     initialMappings,
+    amandaSheetName,
     setSessions,
     setValidationErrors,
     setStep,
@@ -23,39 +25,89 @@ export function ModeSelector() {
   }
 
   function handleImportExisting() {
-    // Import from Amanda's existing sheet
-    const amandaSheet = providerSchedules.find(
-      (s) =>
-        s.sheetName.toLowerCase().includes('amanda') ||
-        s.sheetName.toLowerCase().includes('huang')
-    );
+    // Import from Amanda's existing sheet — try stored sheet name first, then fall back to name search
+    const amandaSheet =
+      providerSchedules.find((s) => s.sheetName === amandaSheetName) ??
+      providerSchedules.find(
+        (s) =>
+          s.sheetName.toLowerCase().includes('amanda') ||
+          s.sheetName.toLowerCase().includes('huang')
+      );
 
     if (!amandaSheet) {
-      // No sheet found, generate fresh
       handleGenerateFresh();
       return;
     }
 
-    // Map existing sessions using initial mappings
+    // Build lookup from initial mappings (primary strategy)
     const mappingLookup = new Map(
       initialMappings
         .filter((m) => m.studentId)
         .map((m) => [m.initial.toUpperCase(), m.studentId])
     );
 
+    // Build direct-match indices for fallback resolution
+    const fullNameIndex = new Map<string, Student>();
+    const firstNameIndex = new Map<string, Student[]>();
+    const initialsIndex = new Map<string, Student[]>();
+    for (const s of students) {
+      fullNameIndex.set(`${s.firstName} ${s.lastName}`.toLowerCase(), s);
+      const fk = s.firstName.toLowerCase();
+      if (!firstNameIndex.has(fk)) firstNameIndex.set(fk, []);
+      firstNameIndex.get(fk)!.push(s);
+      if (s.firstName.length > 0 && s.lastName.length > 0) {
+        const initials = (s.firstName[0] + s.lastName[0]).toLowerCase();
+        if (!initialsIndex.has(initials)) initialsIndex.set(initials, []);
+        initialsIndex.get(initials)!.push(s);
+      }
+    }
+
+    function resolveStudentName(name: string): string {
+      const trimmed = name.trim();
+      const upper = trimmed.toUpperCase();
+      const lower = trimmed.toLowerCase();
+
+      // 1. Initial mappings (highest priority — user-disambiguated)
+      const fromMapping = mappingLookup.get(upper);
+      if (fromMapping) return fromMapping;
+
+      // 2. Full name match
+      const fullMatch = fullNameIndex.get(lower);
+      if (fullMatch) return fullMatch.osisNumber;
+
+      // 3. First name match (only if unique)
+      const firstMatch = firstNameIndex.get(lower);
+      if (firstMatch && firstMatch.length === 1) return firstMatch[0].osisNumber;
+
+      // 4. First+last initials (2-letter tokens)
+      if (/^[A-Za-z]{2,3}$/.test(trimmed)) {
+        const initMatch = initialsIndex.get(lower.slice(0, 2));
+        if (initMatch && initMatch.length === 1) return initMatch[0].osisNumber;
+      }
+
+      // 5. First word as first name
+      const firstWord = lower.split(/\s+/)[0]?.replace(/\.$/, '');
+      if (firstWord && firstWord.length >= 2 && firstWord !== lower) {
+        const fwMatch = firstNameIndex.get(firstWord);
+        if (fwMatch && fwMatch.length === 1) return fwMatch[0].osisNumber;
+      }
+
+      return '';
+    }
+
     const importedSessions = amandaSheet.sessions
       .map((es, idx) => {
         const studentIds = es.studentNames
-          .map((name) => {
-            const upper = name.trim().toUpperCase();
-            return mappingLookup.get(upper) ?? '';
-          })
+          .map(resolveStudentName)
           .filter((id) => id !== '');
 
-        if (studentIds.length === 0) return null;
+        // Deduplicate in case multiple names resolved to the same student
+        const uniqueIds = [...new Set(studentIds)];
+
+        if (uniqueIds.length === 0) return null;
 
         const mandateIndices: Record<string, number> = {};
-        for (const sid of studentIds) {
+        for (const sid of uniqueIds) {
           mandateIndices[sid] = 0; // best-guess on import, user can adjust
         }
 
@@ -64,11 +116,11 @@ export function ModeSelector() {
           day: es.day,
           startTime: es.startTime,
           endTime: es.endTime,
-          studentIds,
+          studentIds: uniqueIds,
           mandateIndices,
-          type: (studentIds.length === 1
+          type: (uniqueIds.length === 1
             ? 'individual'
-            : studentIds.length === 2
+            : uniqueIds.length === 2
               ? 'pair'
               : 'group') as 'individual' | 'pair' | 'group',
           locked: false,
