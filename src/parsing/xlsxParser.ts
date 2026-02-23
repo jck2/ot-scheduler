@@ -3,8 +3,6 @@ import type { DayOfWeek, ExternalSession, ProviderSchedule } from '@/types';
 import { SKIP_CELLS } from '@/utils/constants';
 import { parseExcelTime, parseTimeRange } from '@/utils/timeUtils';
 
-const DAY_NAMES: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-
 // Maps lowercase alpha-only header cell text → canonical DayOfWeek.
 // Non-alpha characters are stripped before lookup, so "Fri.", "Fridays" etc. resolve correctly.
 const DAY_HEADER_MAP: Record<string, DayOfWeek> = {
