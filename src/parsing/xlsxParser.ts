@@ -5,6 +5,16 @@ import { parseExcelTime, parseTimeRange } from '@/utils/timeUtils';
 
 const DAY_NAMES: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
+// Maps lowercase alpha-only header cell text → canonical DayOfWeek.
+// Non-alpha characters are stripped before lookup, so "Fri.", "Fridays" etc. resolve correctly.
+const DAY_HEADER_MAP: Record<string, DayOfWeek> = {
+  monday: 'Monday', mondays: 'Monday', mon: 'Monday',
+  tuesday: 'Tuesday', tuesdays: 'Tuesday', tue: 'Tuesday', tues: 'Tuesday',
+  wednesday: 'Wednesday', wednesdays: 'Wednesday', wed: 'Wednesday', weds: 'Wednesday',
+  thursday: 'Thursday', thursdays: 'Thursday', thu: 'Thursday', thur: 'Thursday', thurs: 'Thursday',
+  friday: 'Friday', fridays: 'Friday', fri: 'Friday',
+};
+
 // Matches embedded time ranges like "8:15-9", "2:15-3pm", "(9:00-9:30)", "8:15–9:00"
 const IN_CELL_TIME_RE = /\(?\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*\)?/gi;
 
@@ -97,11 +107,13 @@ function parseScheduleSheet(
     if (!row) continue;
     const found: { day: DayOfWeek; col: number }[] = [];
     for (let c = 0; c < row.length; c++) {
-      const cell = String(row[c] ?? '').trim().toLowerCase();
-      for (const day of DAY_NAMES) {
-        if (cell === day.toLowerCase()) {
-          found.push({ day, col: c });
-        }
+      // Normalize: lowercase, strip non-alpha characters so "Fri.", "Fridays",
+      // "Wed." etc. all resolve correctly via the map.
+      const raw = String(row[c] ?? '').trim().toLowerCase();
+      const cell = raw.replace(/[^a-z]/g, '');
+      const day = DAY_HEADER_MAP[cell];
+      if (day) {
+        found.push({ day, col: c });
       }
     }
     if (found.length >= 2) {

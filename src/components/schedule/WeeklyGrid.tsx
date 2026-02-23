@@ -103,14 +103,18 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
   const externalSessionsByCell = useMemo(() => {
     if (providerView === 'self') return new Map<string, { session: ExternalSession; providerName: string; colorIdx: number; matchedNames: { name: string; studentIds: string[] }[] }[]>();
 
-    const isOtSheet = (name: string) => /\bOT\b/i.test(name);
+    // Matches "OT" or "OT-" only when preceded by a space/start and followed by
+    // a space or end of string — so "OT- Christina" matches but "Ot-Mann" does not.
+    const isOtSheet = (name: string) => /(?:^|\s)OT-?(?=\s|$)/i.test(name);
     const otherProviders = providerSchedules.filter(
       (ps) => ps.sheetName !== amandaSheetName && !isOtSheet(ps.sheetName)
     );
 
     function findMatchedStudentIds(rawName: string): string[] {
       const lower = rawName.toLowerCase().trim();
-      const cleaned = lower.replace(/\s*\(.*?\)\s*/g, '').trim();
+      // Replace parenthetical with a space so surrounding words don't merge —
+      // e.g. "Aqeela (Magnolia) push in" must stay "aqeela push in", not "aqeelapush in".
+      const cleaned = lower.replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim();
       if (cleaned.length < 2) return [];
 
       const ids: string[] = [];

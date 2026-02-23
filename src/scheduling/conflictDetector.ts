@@ -2,6 +2,17 @@ import type { Conflict, ProviderSchedule, Student } from '@/types';
 import { studentDisplayName } from '@/parsing/rosterParser';
 
 /**
+ * Returns true if a sheet name represents an OT provider.
+ * Matches "OT" or "OT-" only when preceded by a space (or start of string)
+ * and followed by a space or end of string — so "OT- Christina" and "OT Jessica"
+ * both match, while "OT" embedded inside a hyphenated last name (e.g. "Ot-Mann")
+ * does not, because the character after the hyphen is a letter, not a space.
+ */
+function isOtSheet(name: string): boolean {
+  return /(?:^|\s)OT-?(?=\s|$)/i.test(name);
+}
+
+/**
  * Scan all other provider sheets to find when Amanda's students have sessions
  * with other providers (Speech, PT, SETSS, Counseling).
  */
@@ -37,9 +48,11 @@ export function detectCrossProviderConflicts(
   }
 
   for (const schedule of allSchedules) {
-    // Skip Amanda's own sheet and all other OT sheets (no student overlap)
+    // Skip Amanda's own sheet and all other OT sheets (no student overlap).
+    // Use whitespace-split + exact token match rather than \bOT\b to avoid
+    // false matches when "OT" appears inside a hyphenated last name.
     if (schedule.sheetName === mySheetName) continue;
-    if (/\bOT\b/i.test(schedule.sheetName)) continue;
+    if (isOtSheet(schedule.sheetName)) continue;
 
     for (const session of schedule.sessions) {
       for (const name of session.studentNames) {
@@ -70,7 +83,10 @@ function findStudentByPartialName(
   initialsIndex: Map<string, Student[]>
 ): Student | undefined {
   // Strip parenthetical annotations like "(push in)", "(Magnolia)" before matching
-  const lower = name.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim();
+  // Replace parenthetical with a space (not empty string) so that surrounding
+  // words don't get concatenated — e.g. "Aqeela (Magnolia) push in" must not
+  // become "aqeelapush in". Then collapse any double-spaces and trim.
+  const lower = name.toLowerCase().replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim();
 
   if (lower.length < 2) return undefined; // Avoid single-initial false positives
 
