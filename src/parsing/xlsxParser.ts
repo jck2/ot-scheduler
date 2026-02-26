@@ -58,7 +58,7 @@ export function extractInCellTime(
 
   // Remove ALL time-range patterns from text so time digits don't interfere with name splitting
   IN_CELL_TIME_RE.lastIndex = 0;
-  const cleanedText = text.replace(IN_CELL_TIME_RE, ' ').replace(/\s+/g, ' ').trim();
+  const cleanedText = text.replace(IN_CELL_TIME_RE, '\n').replace(/[^\S\n]+/g, ' ').replace(/\n+/g, '\n').trim();
 
   return { start, end, cleanedText };
 }
@@ -227,9 +227,9 @@ function isSkipCell(text: string): boolean {
 }
 
 function splitStudentNames(text: string): string[] {
-  // Split by comma, semicolon, colon, slash, "+", or " & "/"and"
+  // Split by comma, semicolon, colon, slash, "+", newline, or " & "/"and"
   return text
-    .split(/[,;&/:]+|\+|\band\b/i)
+    .split(/[,;&/:]+|\+|\n|\band\b/i)
     .map((s) => s.trim())
     .filter((s) => s.length > 0 && !isSkipCell(s));
 }
