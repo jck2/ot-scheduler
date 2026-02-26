@@ -100,10 +100,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     persistState(get());
   },
   amandaSheetName: '',
-  setAmandaSheetName: (amandaSheetName) => set({ amandaSheetName }),
+  setAmandaSheetName: (amandaSheetName) => {
+    set({ amandaSheetName });
+    persistState(get());
+  },
 
   initialMappings: [],
-  setInitialMappings: (initialMappings) => set({ initialMappings }),
+  setInitialMappings: (initialMappings) => {
+    set({ initialMappings });
+    persistState(get());
+  },
   resolveMapping: (initial, studentId) => {
     const mappings = get().initialMappings.map((m) =>
       m.initial === initial ? { ...m, studentId, confidence: 'exact' as const } : m
@@ -178,13 +184,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   conflicts: [],
-  setConflicts: (conflicts) => set({ conflicts }),
+  setConflicts: (conflicts) => {
+    set({ conflicts });
+    persistState(get());
+  },
 
   validationErrors: [],
   setValidationErrors: (validationErrors) => set({ validationErrors }),
 
   providerView: 'both' as const,
-  setProviderView: (providerView) => set({ providerView }),
+  setProviderView: (providerView) => {
+    set({ providerView });
+    persistState(get());
+  },
 
   excludedStudentIds: [],
   toggleExcludedStudent: (studentId) => {
@@ -215,6 +227,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           config: saved.config ?? { ...DEFAULT_CONFIG },
           step: saved.step ?? 'upload',
           excludedStudentIds: saved.excludedStudentIds ?? [],
+          providerSchedules: saved.providerSchedules ?? [],
+          amandaSheetName: saved.amandaSheetName ?? '',
+          initialMappings: saved.initialMappings ?? [],
+          conflicts: saved.conflicts ?? [],
+          providerView: saved.providerView ?? 'both',
         });
       }
     } catch (e) {
@@ -248,6 +265,11 @@ interface PersistedState {
   config: AppConfig;
   step: AppStep;
   excludedStudentIds?: string[];
+  providerSchedules?: ProviderSchedule[];
+  amandaSheetName?: string;
+  initialMappings?: InitialMapping[];
+  conflicts?: Conflict[];
+  providerView?: 'self' | 'others' | 'both';
 }
 
 let manualIdCounter = 0;
@@ -276,6 +298,11 @@ function persistState(state: AppState) {
     config: state.config,
     step: state.step,
     excludedStudentIds: state.excludedStudentIds,
+    providerSchedules: state.providerSchedules,
+    amandaSheetName: state.amandaSheetName,
+    initialMappings: state.initialMappings,
+    conflicts: state.conflicts,
+    providerView: state.providerView,
   };
   debouncedSave('app-state', data);
 }
