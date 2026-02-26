@@ -75,8 +75,12 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
     { bg: 'bg-lime-100/70', border: 'border-lime-300', text: 'text-lime-800' },
     { bg: 'bg-fuchsia-100/70', border: 'border-fuchsia-300', text: 'text-fuchsia-800' },
     { bg: 'bg-orange-100/70', border: 'border-orange-300', text: 'text-orange-800' },
-    { bg: 'bg-slate-100/70', border: 'border-slate-300', text: 'text-slate-800' },
+    { bg: 'bg-violet-100/70', border: 'border-violet-300', text: 'text-violet-800' },
     { bg: 'bg-cyan-100/70', border: 'border-cyan-300', text: 'text-cyan-800' },
+    { bg: 'bg-amber-100/70', border: 'border-amber-300', text: 'text-amber-800' },
+    { bg: 'bg-emerald-100/70', border: 'border-emerald-300', text: 'text-emerald-800' },
+    { bg: 'bg-pink-100/70', border: 'border-pink-300', text: 'text-pink-800' },
+    { bg: 'bg-indigo-100/70', border: 'border-indigo-300', text: 'text-indigo-800' },
   ];
 
   const amandaSheetName = useAppStore((s) => s.amandaSheetName);
