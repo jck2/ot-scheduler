@@ -9,7 +9,7 @@ import { studentDisplayName } from '@/parsing/rosterParser';
  * does not, because the character after the hyphen is a letter, not a space.
  */
 function isOtSheet(name: string): boolean {
-  return /(?:^|\s)OT-?(?=\s|$)/i.test(name);
+  return /^OT[\s-]/i.test(name);
 }
 
 /**

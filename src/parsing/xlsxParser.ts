@@ -77,7 +77,14 @@ export function parseXlsx(buffer: ArrayBuffer): ProviderSchedule[] {
 
     const parsed = parseScheduleSheet(sheet, sheetName);
     if (parsed) {
+      console.log(`[parseXlsx] Sheet "${sheetName}": ${parsed.sessions.length} sessions`);
+      for (const s of parsed.sessions.slice(0, 5)) {
+        console.log(`  ${s.day} ${s.startTime}-${s.endTime} names:`, s.studentNames);
+      }
+      if (parsed.sessions.length > 5) console.log(`  ... and ${parsed.sessions.length - 5} more`);
       schedules.push(parsed);
+    } else {
+      console.log(`[parseXlsx] Sheet "${sheetName}": SKIPPED (no schedule found)`);
     }
   }
 

@@ -105,10 +105,18 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
 
     // Matches "OT" or "OT-" only when preceded by a space/start and followed by
     // a space or end of string — so "OT- Christina" matches but "Ot-Mann" does not.
-    const isOtSheet = (name: string) => /(?:^|\s)OT-?(?=\s|$)/i.test(name);
+    const isOtSheet = (name: string) => /^OT[\s-]/i.test(name);
     const otherProviders = providerSchedules.filter(
       (ps) => ps.sheetName !== amandaSheetName && !isOtSheet(ps.sheetName)
     );
+
+    console.log(`[WeeklyGrid] providerView=${providerView}, amandaSheet="${amandaSheetName}"`);
+    console.log(`[WeeklyGrid] ${providerSchedules.length} total providers, ${otherProviders.length} non-OT/non-self`);
+    for (const ps of providerSchedules) {
+      const excluded = ps.sheetName === amandaSheetName ? ' (SELF)' : isOtSheet(ps.sheetName) ? ' (OT-EXCLUDED)' : '';
+      console.log(`  "${ps.sheetName}" — ${ps.sessions.length} sessions${excluded}`);
+    }
+    console.log(`[WeeklyGrid] ${students.length} students for matching, initialsIndex size=${initialsIndex.size}`);
 
     function findMatchedStudentIds(rawName: string): string[] {
       const lower = rawName.toLowerCase().trim();
@@ -163,8 +171,11 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
     const map = new Map<string, { session: ExternalSession; providerName: string; colorIdx: number; matchedNames: { name: string; studentIds: string[] }[] }[]>();
     const { slotDuration, endTime: gridEnd } = config;
     const effectiveStart = timeRows.length > 0 ? timeRows[0] : config.startTime;
+    let totalMatched = 0;
+    let totalUnmatched = 0;
     otherProviders.forEach((ps, idx) => {
       const colorIdx = idx % PROVIDER_COLORS.length;
+      let providerMatched = 0;
       for (const ext of ps.sessions) {
         const matchedNames: { name: string; studentIds: string[] }[] = [];
         for (const name of ext.studentNames) {
@@ -172,9 +183,16 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
           const nonExcludedIds = allIds.filter((id) => !excludedSet.has(id));
           if (nonExcludedIds.length > 0) {
             matchedNames.push({ name, studentIds: nonExcludedIds });
+          } else if (allIds.length > 0) {
+            console.log(`  [match] "${ps.sheetName}" name "${name}" matched ${allIds.length} student(s) but ALL excluded`);
           }
         }
-        if (matchedNames.length === 0) continue;
+        if (matchedNames.length === 0) {
+          totalUnmatched++;
+          continue;
+        }
+        providerMatched++;
+        totalMatched++;
 
         const entry = { session: ext, providerName: ps.providerName, colorIdx, matchedNames };
 
@@ -186,7 +204,9 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
           }
         }
       }
+      console.log(`  [match] "${ps.sheetName}": ${providerMatched} sessions matched, ${ps.sessions.length - providerMatched} unmatched`);
     });
+    console.log(`[WeeklyGrid] Total: ${totalMatched} matched sessions, ${totalUnmatched} unmatched. Map has ${map.size} cells.`);
     return map;
   }, [providerView, providerSchedules, amandaSheetName, students, nameIndex, fullNameIndex, initialsIndex, config, timeRows, excludedStudentIds]);
 
