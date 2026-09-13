@@ -39,7 +39,7 @@ export function MandateProgress({ student }: MandateProgressProps) {
         <span
           title={`Group sessions used / allowed (max group size ${sizeLabel.replace('≤', '')})`}
           className={`text-[10px] px-1 rounded whitespace-nowrap ${
-            overGrouped ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+            overGrouped ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
           }`}
         >
           <span className="opacity-60 mr-0.5">Group</span>

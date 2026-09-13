@@ -53,6 +53,21 @@ export function validateSchedule(
   const errors: ValidationError[] = [];
   const studentMap = new Map(students.map((s) => [s.osisNumber, s]));
 
+  const sessionsByStudent = new Map<string, ScheduledSession[]>();
+  for (const s of sessions) {
+    for (const id of s.studentIds) {
+      if (!sessionsByStudent.has(id)) sessionsByStudent.set(id, []);
+      sessionsByStudent.get(id)!.push(s);
+    }
+  }
+  const sessionsBySlot = new Map<string, ScheduledSession[]>();
+  for (const s of sessions) {
+    const k = slotKey(s.day, s.startTime);
+    if (!sessionsBySlot.has(k)) sessionsBySlot.set(k, []);
+    sessionsBySlot.get(k)!.push(s);
+  }
+  const occupancy = buildSlotOccupancy(sessions);
+
   // --- Per-student totals (consistent with the roster chip) ---
   // Sessions count toward a student regardless of individual/group. Grouping is
   // inferred from co-location, so "grouped" here means sharing a slot.
@@ -60,7 +75,10 @@ export function validateSchedule(
     const summary = getStudentSessionSummary(student, sessions);
     const name = `${student.firstName} ${student.lastName}`.trim();
 
+    const mySessions = sessionsByStudent.get(student.osisNumber) ?? [];
+
     if (summary.totalScheduled < summary.totalRequired) {
+      // Too few sessions — no specific cell to blame; shows in the list/roster only.
       errors.push({
         type: 'unmet_mandate',
         severity: 'error',
@@ -70,20 +88,47 @@ export function validateSchedule(
     } else if (summary.totalScheduled > summary.totalRequired) {
       errors.push({
         type: 'unmet_mandate',
-        severity: 'warning',
+        severity: 'error',
         studentId: student.osisNumber,
+        sessionIds: mySessions.map((s) => s.id),
         message: `${name}: ${summary.totalScheduled} sessions scheduled, but the mandate is only ${summary.totalRequired}/week.`,
       });
     }
 
-    // Too many grouped sessions vs the cap (mirrors the red "Group" chip).
+    // Too many grouped sessions vs the cap → rings only the grouped cards.
     if (summary.maxGroupSessions > 0 && summary.groupedScheduled > summary.maxGroupSessions) {
+      const groupedIds = mySessions
+        .filter((s) => slotStudentCount(s.day, s.startTime, occupancy) > 1)
+        .map((s) => s.id);
       errors.push({
         type: 'group_size',
-        severity: 'error',
+        severity: 'warning',
         studentId: student.osisNumber,
+        sessionIds: groupedIds,
         message: `${student.firstName} is in ${summary.groupedScheduled} group session(s), but the mandate allows at most ${summary.maxGroupSessions}.`,
       });
+    }
+
+    // Scheduled more than once on the same day → one error per cell, each pointing
+    // at the other time(s). Counts distinct time slots, so a co-located group is one.
+    const byDay = new Map<string, ScheduledSession[]>();
+    for (const s of mySessions) {
+      if (!byDay.has(s.day)) byDay.set(s.day, []);
+      byDay.get(s.day)!.push(s);
+    }
+    for (const [day, daySessions] of byDay) {
+      const starts = [...new Set(daySessions.map((s) => s.startTime))];
+      if (starts.length < 2) continue;
+      for (const s of daySessions) {
+        const others = starts.filter((t) => t !== s.startTime).map((t) => minutesToTime(t));
+        errors.push({
+          type: 'double_booking',
+          severity: 'error',
+          studentId: student.osisNumber,
+          sessionId: s.id,
+          message: `${student.firstName} is also scheduled at ${others.join(', ')} on ${day} — a student should only be seen once per day.`,
+        });
+      }
     }
   }
 
@@ -91,11 +136,11 @@ export function validateSchedule(
   // Amanda's baseline assumption: two students in one calendar block are a group.
   // The validator explains why a given grouping is invalid, rather than silently
   // re-modeling it as separate individual sessions.
-  const occupancy = buildSlotOccupancy(sessions);
   for (const [key, idSet] of occupancy) {
     if (idSet.size <= 1) continue;
     const [dayStr, startStr] = key.split('|');
     const when = `${dayStr} ${minutesToTime(Number(startStr))}`;
+    const slotSessionIds = (sessionsBySlot.get(key) ?? []).map((s) => s.id);
     const members = [...idSet]
       .map((id) => studentMap.get(id))
       .filter((s): s is Student => !!s);
@@ -111,26 +156,35 @@ export function validateSchedule(
       errors.push({
         type: 'wrong_class_mix',
         severity: 'warning',
+        studentIds: members.map((m) => m.osisNumber),
+        sessionIds: slotSessionIds,
         message: `${members.map((m) => m.firstName).join(' & ')} may not be in the same class ${when} (${[...distinctClasses].join(', ')}) — check before grouping.`,
       });
     }
 
     // Per-member: individual-only, or group larger than the student allows.
+    // Advisory — grouping is Amanda's call and mandate data may be imperfect.
     for (const m of members) {
       const maxSize = studentMaxGroupSize(m);
+      // Ring only this member's card(s) in this slot.
+      const memberSessionIds = (sessionsBySlot.get(key) ?? [])
+        .filter((s) => s.studentIds.includes(m.osisNumber))
+        .map((s) => s.id);
       if (maxSize === 0) {
         errors.push({
           type: 'group_size',
-          severity: 'error',
+          severity: 'warning',
           studentId: m.osisNumber,
-          message: `${m.firstName} can't be grouped ${when} — mandate is individual only (1:1).`,
+          sessionIds: memberSessionIds,
+          message: `${m.firstName} has an individual-only mandate (1:1) but is grouped ${when}.`,
         });
       } else if (groupSize > maxSize) {
         errors.push({
           type: 'group_size',
-          severity: 'error',
+          severity: 'warning',
           studentId: m.osisNumber,
-          message: `Group of ${groupSize} ${when} is too large for ${m.firstName} — mandate allows up to ${maxSize}.`,
+          sessionIds: memberSessionIds,
+          message: `Group of ${groupSize} ${when} is larger than ${m.firstName}'s mandate allows (up to ${maxSize}).`,
         });
       }
     }
@@ -149,13 +203,13 @@ export function validateSchedule(
       errors.push({
         type: 'double_booking',
         severity: 'error',
-        sessionId: s1.id,
+        sessionIds: [s1.id, s2.id],
         message: `Provider has overlapping sessions on ${s1.day} at ${minutesToTime(s1.startTime)} and ${minutesToTime(s2.startTime)}.`,
       });
     }
   }
 
-  // Check student double-bookings
+  // Check student double-bookings (same student in two overlapping sessions)
   for (const s1 of sessions) {
     for (const s2 of sessions) {
       if (s1.id >= s2.id) continue;
@@ -169,8 +223,8 @@ export function validateSchedule(
           type: 'double_booking',
           severity: 'error',
           studentId,
-          sessionId: s1.id,
-          message: `${student?.firstName ?? studentId} double-booked on ${s1.day} at ${s1.startTime}`,
+          sessionIds: [s1.id, s2.id],
+          message: `${student?.firstName ?? studentId} is double-booked on ${s1.day} at ${minutesToTime(s1.startTime)} and ${minutesToTime(s2.startTime)}.`,
         });
       }
     }
@@ -236,6 +290,26 @@ export function validateSchedule(
   }
 
   return errors;
+}
+
+/**
+ * Whether a validation issue should ring a given card (a specific student in a
+ * specific session). An issue rings a card only when it names that session
+ * (sessionId/sessionIds) AND the student is a subject (studentId/studentIds, or
+ * no subject = every student in the session, e.g. a provider overlap). Issues with
+ * no session scope (e.g. an unmet mandate) ring no card — they show in the list only.
+ */
+export function errorAppliesToCard(
+  e: ValidationError,
+  sessionId: string,
+  studentId: string
+): boolean {
+  const sessionMatch =
+    e.sessionId === sessionId || (e.sessionIds?.includes(sessionId) ?? false);
+  if (!sessionMatch) return false;
+  const hasSubject = e.studentId !== undefined || e.studentIds !== undefined;
+  if (!hasSubject) return true;
+  return e.studentId === studentId || (e.studentIds?.includes(studentId) ?? false);
 }
 
 export interface StudentSessionSummary {

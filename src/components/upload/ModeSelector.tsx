@@ -3,6 +3,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { generateSchedule } from '@/scheduling/algorithm';
 import { validateSchedule } from '@/scheduling/validator';
 import { runPreflight, type PreflightIssue } from '@/scheduling/preflight';
+import { lastNameMatches } from '@/parsing/overlayMatcher';
 import type { Student } from '@/types';
 import { PreflightModal } from './PreflightModal';
 
@@ -105,21 +106,26 @@ export function ModeSelector() {
       const fullMatch = fullNameIndex.get(lower);
       if (fullMatch) return fullMatch.osisNumber;
 
-      // 3. First name match (only if unique)
-      const firstMatch = firstNameIndex.get(lower);
-      if (firstMatch && firstMatch.length === 1) return firstMatch[0].osisNumber;
+      // 3. First name (exact word or first word of "Asa D"), disambiguated by the
+      //    rest of the token when several students share a first name.
+      const words = lower.split(/\s+/);
+      const first = words[0].replace(/\.$/, '');
+      const rest = words.slice(1).join(' ').replace(/\./g, '').trim();
+      const byFirst =
+        firstNameIndex.get(lower) ?? (first.length >= 2 ? firstNameIndex.get(first) : undefined);
+      if (byFirst && byFirst.length > 0) {
+        if (byFirst.length === 1) return byFirst[0].osisNumber;
+        if (rest) {
+          const narrowed = byFirst.filter((s) => lastNameMatches(s.lastName, rest));
+          if (narrowed.length === 1) return narrowed[0].osisNumber;
+        }
+        // Still ambiguous (bare shared first name) — don't guess.
+      }
 
       // 4. First+last initials (2-letter tokens)
       if (/^[A-Za-z]{2,3}$/.test(trimmed)) {
         const initMatch = initialsIndex.get(lower.slice(0, 2));
         if (initMatch && initMatch.length === 1) return initMatch[0].osisNumber;
-      }
-
-      // 5. First word as first name
-      const firstWord = lower.split(/\s+/)[0]?.replace(/\.$/, '');
-      if (firstWord && firstWord.length >= 2 && firstWord !== lower) {
-        const fwMatch = firstNameIndex.get(firstWord);
-        if (fwMatch && fwMatch.length === 1) return fwMatch[0].osisNumber;
       }
 
       return '';
@@ -148,11 +154,6 @@ export function ModeSelector() {
           endTime: es.endTime,
           studentIds: uniqueIds,
           mandateIndices,
-          type: (uniqueIds.length === 1
-            ? 'individual'
-            : uniqueIds.length === 2
-              ? 'pair'
-              : 'group') as 'individual' | 'pair' | 'group',
           locked: false,
         };
       })

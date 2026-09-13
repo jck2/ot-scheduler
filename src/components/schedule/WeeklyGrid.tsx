@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { minutesToTime, slotsOverlap } from '@/utils/timeUtils';
 import { dayIndex } from '@/utils/timeUtils';
-import type { ExternalSession, ValidationError } from '@/types';
+import type { ExternalSession } from '@/types';
 import { buildNameIndex, matchExternalName } from '@/parsing/overlayMatcher';
 import { TimeSlotCell, type ActiveDragData } from './TimeSlotCell';
 
@@ -57,16 +57,6 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
     return rows;
   }, [config, providerView, providerSchedules]);
 
-  const errorsBySessionId = useMemo(() => {
-    const map = new Map<string, ValidationError[]>();
-    for (const e of validationErrors) {
-      if (e.sessionId) {
-        if (!map.has(e.sessionId)) map.set(e.sessionId, []);
-        map.get(e.sessionId)!.push(e);
-      }
-    }
-    return map;
-  }, [validationErrors]);
 
   // Provider color palette for external sessions overlay
   const PROVIDER_COLORS = [
@@ -195,7 +185,7 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
                     studentMap={studentMap}
                     isLunch={isLunch}
                     onRemoveStudent={onRemoveStudent}
-                    errorsBySessionId={errorsBySessionId}
+                    validationErrors={validationErrors}
                     externalSessions={cellExternals}
                     providerColors={PROVIDER_COLORS}
                     onExcludeStudent={toggleExcludedStudent}

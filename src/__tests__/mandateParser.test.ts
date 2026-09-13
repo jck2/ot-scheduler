@@ -13,6 +13,19 @@ describe('parseMandate', () => {
     });
   });
 
+  it('tolerates a space after the colon: "1x30: group"', () => {
+    const result = parseMandate('1x30: group');
+    expect(result).toHaveLength(1);
+    expect(result[0].groupFlexible).toBe(true);
+    expect(result[0].groupSize).toBe(Infinity);
+  });
+
+  it('tolerates spaces around the colon: "2x30 : 2"', () => {
+    const result = parseMandate('2x30 : 2');
+    expect(result[0].groupSize).toBe(2);
+    expect(result[0].groupFlexible).toBe(false);
+  });
+
   it('parses comma-separated mandates: 1x30:1, 1x30:2', () => {
     const result = parseMandate('1x30:1, 1x30:2');
     expect(result).toHaveLength(2);

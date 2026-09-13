@@ -23,7 +23,8 @@ export interface ScheduledSession {
   endTime: number;
   studentIds: string[]; // OSIS numbers
   mandateIndices: Record<string, number>; // studentId → which mandate this fulfills
-  type: 'individual' | 'pair' | 'group';
+  // Individual vs group is derived from slot co-location, not stored — see
+  // buildSlotOccupancy / slotStudentCount in scheduling/validator.ts.
   locked: boolean;
 }
 
@@ -84,8 +85,14 @@ export interface AppConfig {
 export interface ValidationError {
   type: 'unmet_mandate' | 'double_booking' | 'cross_provider_conflict' | 'group_size' | 'wrong_class_mix' | 'time_overflow';
   severity: 'error' | 'warning';
+  // Card attribution: an issue rings a card (session, student) when the session is
+  // in scope AND the student is a subject. studentId/studentIds name the subjects
+  // (absent = every student in the scoped sessions). sessionId/sessionIds name the
+  // exact sessions the issue rings (absent both = shown only in the list, not on a card).
   studentId?: string;
+  studentIds?: string[];
   sessionId?: string;
+  sessionIds?: string[];
   message: string;
 }
 

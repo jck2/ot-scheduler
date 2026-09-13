@@ -121,34 +121,43 @@ sessions and how large (`:1` = must be individual; `:3` = may be a group of ≤3
 `:group` = flexible, capped at 3 by the scheduler's `MAX_GROUP_SIZE`). So a
 `2x30:1, 1x30:3` student validly gets 3 individual sessions; at most 1 may be a group.
 
-**Grouping is inferred from CO-LOCATION, not session objects.** Two students in the
-same calendar block (same day + start time) are treated as one intended group, even
-if they live in separate `ScheduledSession` objects. `buildSlotOccupancy` /
-`slotStudentCount` ([validator.ts](src/scheduling/validator.ts)) are the single source
-of truth, used by both the calendar cards ([StudentCard.tsx](src/components/schedule/StudentCard.tsx)
-via [TimeSlotCell.tsx](src/components/schedule/TimeSlotCell.tsx)) and the roster chip,
-so they always agree and update live as students move. Dropping a student into an
-occupied slot **always groups** them ([ScheduleView.tsx](src/components/schedule/ScheduleView.tsx)
-`handleDrop`) — it never silently splits into separate individual sessions to dodge a
-rule. The validator then explains any problem.
+**Grouping is inferred from CO-LOCATION, not stored.** Two students in the same
+calendar block (same day + start time) are one intended group, even in separate
+`ScheduledSession` objects. There is **no `type` field on a session** — individual vs
+group is derived from `buildSlotOccupancy` / `slotStudentCount`
+([validator.ts](src/scheduling/validator.ts)), the single source of truth used by both
+the calendar cards ([StudentCard.tsx](src/components/schedule/StudentCard.tsx) via
+[TimeSlotCell.tsx](src/components/schedule/TimeSlotCell.tsx)) and the roster chip, so
+they always agree and update live. Dropping a student into an occupied slot **always
+groups** them ([ScheduleView.tsx](src/components/schedule/ScheduleView.tsx) `handleDrop`)
+— it never silently splits to dodge a rule; the validator explains any problem.
 
 `getStudentSessionSummary` computes totals + grouping; the roster chip
 ([MandateProgress.tsx](src/components/roster/MandateProgress.tsx)) shows a **Total**
-chip (green when the required count is met) and a **Group** chip (neutral, red **only**
-when grouped more than allowed). `getMandateProgress` (per-mandate) is kept only for
+chip (green when the required count is met) and a **Group** chip (neutral, amber when
+grouped more than allowed). `getMandateProgress` (per-mandate) is kept only for
 drag-drop mandate tagging in `ScheduleView`.
 
-**Validation layers on top of the co-location model** (`validateSchedule`):
-- **error** — unmet total (`x of y sessions/week`), student over the group-session cap,
-  a `:1` student placed in a group, a group larger than a student's `:N`, provider
-  overlap at *different* start times, cross-provider conflict.
-- **warning (advisory, softer UI)** — grouped students in different *named* classes
-  (class data is often missing, so this only fires when ≥2 students have differing
-  non-blank classes), over-scheduled (more sessions than mandated), extended hours,
-  lunch overlap. Same slot / same start time is a group, **not** a provider
-  double-booking. Errors render with a red `!`, warnings with a softer amber `ⓘ`
-  ([ValidationPanel.tsx](src/components/schedule/ValidationPanel.tsx),
-  StudentCard).
+**Validation** (`validateSchedule`) — severities reflect what matters to the provider:
+- **error** — cross-provider conflict; a student scheduled twice in one day; provider
+  overlap at *different* start times; unmet total; over-scheduled (more sessions than
+  the mandate).
+- **warning (advisory)** — over the group-session cap; a `:1` student in a group; a
+  group larger than a student's `:N`; grouped students in different *named* classes
+  (fires only when ≥2 have differing non-blank classes — class data is often missing);
+  lunch/extended hours. Same slot / same start time is a group, **not** a
+  double-booking.
+
+**Card attribution** — `errorAppliesToCard(e, sessionId, studentId)` decides which
+cards an issue rings: the session must be in scope (`sessionId`/`sessionIds`) **and**
+the student a subject (`studentId`/`studentIds`, or none = every student in the
+session). So a conflict rings only the conflicting card, an over-cap warning only the
+grouped cards, and same-day doubles are emitted **once per cell** (each pointing at the
+other time). Issues with no session scope (e.g. unmet total) show only in the list.
+Cards are **grade-colored** (solid fills, no border), with a **red `ring-[3px]`** for an
+error and a lighter **amber `ring-2`** for a warning; the toolbar shows error/warning
+counts (hover for the full list) plus `sessions · student-slots`. `validationErrors`
+isn't persisted, so `ScheduleView` recomputes it on mount and on every schedule change.
 
 The XLSX parser (`xlsxParser.ts`) is heuristic and tolerant: it scans each sheet for
 a header row containing ≥2 day names, finds the time column, reads student

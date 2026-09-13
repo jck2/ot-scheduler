@@ -160,11 +160,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       sessions = sessions.filter((s) => s.id !== sessionId);
     } else {
       const { [studentId]: _, ...newMandateIndices } = session.mandateIndices;
-      const type: ScheduledSession['type'] =
-        newStudentIds.length === 1 ? 'individual' : newStudentIds.length === 2 ? 'pair' : 'group';
       sessions = sessions.map((s) =>
         s.id === sessionId
-          ? { ...s, studentIds: newStudentIds, mandateIndices: newMandateIndices, type }
+          ? { ...s, studentIds: newStudentIds, mandateIndices: newMandateIndices }
           : s
       );
     }
@@ -176,9 +174,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (s.id !== sessionId) return s;
       const newStudentIds = [...s.studentIds, studentId];
       const newMandateIndices = { ...s.mandateIndices, [studentId]: mandateIndex };
-      const type: ScheduledSession['type'] =
-        newStudentIds.length === 1 ? 'individual' : newStudentIds.length === 2 ? 'pair' : 'group';
-      return { ...s, studentIds: newStudentIds, mandateIndices: newMandateIndices, type };
+      return { ...s, studentIds: newStudentIds, mandateIndices: newMandateIndices };
     });
     set({ sessions });
     persistState(get());
@@ -313,10 +309,6 @@ function sanitizeStudent(raw: Partial<Student> | null | undefined): Student {
 function sanitizeSession(raw: Partial<ScheduledSession> | null | undefined): ScheduledSession {
   const s = raw ?? {};
   const studentIds = Array.isArray(s.studentIds) ? s.studentIds.filter((id) => typeof id === 'string') : [];
-  const type: ScheduledSession['type'] =
-    s.type === 'individual' || s.type === 'pair' || s.type === 'group'
-      ? s.type
-      : studentIds.length === 1 ? 'individual' : studentIds.length === 2 ? 'pair' : 'group';
   return {
     id: typeof s.id === 'string' ? s.id : nextSessionId(),
     day: s.day ?? 'Monday',
@@ -324,7 +316,6 @@ function sanitizeSession(raw: Partial<ScheduledSession> | null | undefined): Sch
     endTime: typeof s.endTime === 'number' ? s.endTime : 0,
     studentIds,
     mandateIndices: s.mandateIndices && typeof s.mandateIndices === 'object' ? s.mandateIndices : {},
-    type,
     locked: !!s.locked,
   };
 }

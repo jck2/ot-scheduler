@@ -11,7 +11,8 @@ export function parseMandate(raw: string): MandateSession[] {
   const sessions: MandateSession[] = [];
   if (!raw || !raw.trim()) return sessions;
 
-  const pattern = /(\d+)x(\d+)(?::(\d+|group))?/gi;
+  // Allow whitespace around the colon: "2x30:group", "1x30: group", "2x30 : 2".
+  const pattern = /(\d+)x(\d+)(?:\s*:\s*(\d+|group))?/gi;
   let match: RegExpExecArray | null;
 
   while ((match = pattern.exec(raw)) !== null) {

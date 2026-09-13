@@ -41,7 +41,7 @@ describe('generateSchedule', () => {
 
     expect(schedule).toHaveLength(2);
     expect(schedule[0].studentIds).toEqual(['001']);
-    expect(schedule[0].type).toBe('individual');
+    expect(schedule[0].studentIds).toHaveLength(1); // individual (co-location is 1)
   });
 
   it('groups pair mandates from same class', () => {

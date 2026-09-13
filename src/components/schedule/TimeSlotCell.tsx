@@ -1,6 +1,7 @@
 import { useDroppable } from '@dnd-kit/core';
 import type { DayOfWeek, ExternalSession, ScheduledSession, Student, ValidationError } from '@/types';
 import { minutesToTime } from '@/utils/timeUtils';
+import { errorAppliesToCard } from '@/scheduling/validator';
 import { StudentCard } from './StudentCard';
 
 interface ProviderColor {
@@ -29,7 +30,7 @@ interface TimeSlotCellProps {
   studentMap: Map<string, Student>;
   isLunch: boolean;
   onRemoveStudent: (sessionId: string, studentId: string) => void;
-  errorsBySessionId: Map<string, ValidationError[]>;
+  validationErrors: ValidationError[];
   externalSessions: ExternalSessionEntry[];
   providerColors: ProviderColor[];
   onExcludeStudent?: (studentId: string) => void;
@@ -43,7 +44,7 @@ export function TimeSlotCell({
   studentMap,
   isLunch,
   onRemoveStudent,
-  errorsBySessionId,
+  validationErrors,
   externalSessions,
   providerColors,
   onExcludeStudent,
@@ -73,8 +74,6 @@ export function TimeSlotCell({
   // if they came from separate session objects (manual drops, import).
   const slotStudentIds = [...new Set(sessions.flatMap((s) => s.studentIds))];
   const slotCount = slotStudentIds.length;
-  // Stable per-slot key so all cards in the slot share one group color.
-  const slotColorKey = `${day}-${startTime}`;
 
   // Flatten sessions into per-student entries
   const studentEntries: { session: ScheduledSession; studentId: string }[] = [];
@@ -86,7 +85,12 @@ export function TimeSlotCell({
 
   const renderStudentCards = () =>
     studentEntries.map(({ session, studentId }) => {
-      const errors = errorsBySessionId.get(session.id) ?? [];
+      // Each issue rings a card only when it names this session and this student
+      // is a subject — so a conflict shows only on the conflicting card, an
+      // over-cap warning only on the grouped cards, etc.
+      const errors = validationErrors.filter((e) =>
+        errorAppliesToCard(e, session.id, studentId)
+      );
       return (
         <StudentCard
           key={`${session.id}::${studentId}`}
@@ -97,7 +101,6 @@ export function TimeSlotCell({
           onRemoveStudent={onRemoveStudent}
           slotStudentIds={slotStudentIds}
           slotCount={slotCount}
-          slotColorKey={slotColorKey}
         />
       );
     });
@@ -112,11 +115,11 @@ export function TimeSlotCell({
       {hasExternals ? (
         <div className="flex h-full">
           {/* Left half: Amanda's sessions */}
-          <div className="flex-1 p-0.5 space-y-0.5 border-r border-gray-100">
+          <div className="flex-1 p-1 space-y-1.5 border-r border-gray-100">
             {renderStudentCards()}
           </div>
           {/* Right half: Other providers' roster students */}
-          <div className="flex-1 p-0.5 space-y-0.5">
+          <div className="flex-1 p-1 space-y-1">
             {externalSessions.map((ext, i) => {
               const color = providerColors[ext.colorIdx];
               const timeRange = `${minutesToTime(ext.session.startTime)}\u2013${minutesToTime(ext.session.endTime)}`;
@@ -160,7 +163,7 @@ export function TimeSlotCell({
           </div>
         </div>
       ) : (
-        <div className="p-0.5 space-y-0.5">
+        <div className="p-1 space-y-1.5">
           {renderStudentCards()}
         </div>
       )}

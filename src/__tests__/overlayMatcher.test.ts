@@ -22,6 +22,8 @@ const roster = [
   s('Crispin', 'Garland', 'a4'),
   s('Aiden', 'Lacey', 'a5'),
   s('Alexander', 'Smith', 'a6'),
+  s('Asa', 'Demby', 'a7'),
+  s('Asa', 'Penrose', 'a8'),
 ];
 const index = buildNameIndex(roster);
 const match = (name: string) => matchExternalName(name, index);
@@ -66,6 +68,24 @@ describe('overlayMatcher — real students still match', () => {
 
   it('strips a parenthetical class annotation', () => {
     expect(match('Aqeela (Magnolia) push in')).toEqual(['a3']);
+  });
+});
+
+describe('overlayMatcher — same first name, disambiguated by last name (Bug 1)', () => {
+  it('"Asa D" resolves to Asa Demby only', () => {
+    expect(match('Asa D')).toEqual(['a7']);
+  });
+  it('"Asa P" resolves to Asa Penrose only', () => {
+    expect(match('Asa P')).toEqual(['a8']);
+  });
+  it('"Asa Demby" resolves to Asa Demby only', () => {
+    expect(match('Asa Demby')).toEqual(['a7']);
+  });
+  it('a full name with middle names narrows by the last name word', () => {
+    expect(match('Asa Rhys Van Penrose')).toEqual(['a8']);
+  });
+  it('a bare ambiguous "Asa" returns both (cannot disambiguate)', () => {
+    expect(match('Asa').sort()).toEqual(['a7', 'a8']);
   });
 });
 

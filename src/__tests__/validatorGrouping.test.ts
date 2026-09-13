@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateSchedule } from '@/scheduling/validator';
+import { validateSchedule, errorAppliesToCard } from '@/scheduling/validator';
 import { parseMandate } from '@/parsing/mandateParser';
 import { DEFAULT_CONFIG } from '@/utils/constants';
 import type { ScheduledSession, Student } from '@/types';
@@ -26,7 +26,6 @@ function slot(studentIds: string[], startTime: number): ScheduledSession {
     endTime: startTime + 30,
     studentIds,
     mandateIndices: Object.fromEntries(studentIds.map((id) => [id, 0])),
-    type: studentIds.length === 1 ? 'individual' : studentIds.length === 2 ? 'pair' : 'group',
     locked: false,
   };
 }
@@ -52,31 +51,45 @@ describe('validator — co-location grouping messages', () => {
     expect(errs.some((e) => e.type === 'wrong_class_mix')).toBe(false);
   });
 
-  it('flags an individual-only student placed in a group', () => {
+  it('warns (not errors) about an individual-only student placed in a group', () => {
     const a = student('Ana', 'a', 'Elm', '1x30:1'); // individual only
     const b = student('Ben', 'b', 'Elm', '1x30:3');
-    const sessions = [slot(['a', 'b'], 540)];
-    const errs = validateSchedule(sessions, [a, b], [], DEFAULT_CONFIG);
-    expect(messages(errs)).toMatch(/Ana can't be grouped.*individual only/i);
+    const errs = validateSchedule([slot(['a', 'b'], 540)], [a, b], [], DEFAULT_CONFIG);
+    const issue = errs.find((e) => /individual-only mandate/i.test(e.message));
+    expect(issue?.severity).toBe('warning');
   });
 
-  it('flags a group larger than a student allows', () => {
+  it('warns about a group larger than a student allows', () => {
     const a = student('Ana', 'a', 'Elm', '1x30:2'); // max pair
     const b = student('Ben', 'b', 'Elm', '1x30:3');
     const c = student('Cy', 'c', 'Elm', '1x30:3');
-    const sessions = [slot(['a', 'b', 'c'], 540)]; // group of 3
-    const errs = validateSchedule(sessions, [a, b, c], [], DEFAULT_CONFIG);
-    expect(messages(errs)).toMatch(/too large for Ana.*up to 2/i);
+    const errs = validateSchedule([slot(['a', 'b', 'c'], 540)], [a, b, c], [], DEFAULT_CONFIG);
+    const issue = errs.find((e) => /larger than Ana's mandate allows/i.test(e.message));
+    expect(issue?.severity).toBe('warning');
   });
 
-  it('flags a student grouped more times than the cap', () => {
+  it('warns (not errors) about a student grouped more times than the cap', () => {
     const a = student('Ana', 'a', 'Elm', '1x30:3'); // allows 1 group session
     const b = student('Ben', 'b', 'Elm', '1x30:3');
     const c = student('Cy', 'c', 'Elm', '2x30:3');
-    // Ana in two grouped slots → over her cap of 1.
-    const sessions = [slot(['a', 'b'], 540), slot(['a', 'c'], 570)];
+    // Ana in two grouped slots on different days → over her cap of 1.
+    const sessions = [slot(['a', 'b'], 540), { ...slot(['a', 'c'], 540), day: 'Tuesday' as const }];
     const errs = validateSchedule(sessions, [a, b, c], [], DEFAULT_CONFIG);
-    expect(messages(errs)).toMatch(/Ana is in 2 group session.*at most 1/i);
+    const issue = errs.find((e) => /Ana is in 2 group session.*at most 1/i.test(e.message));
+    expect(issue?.severity).toBe('warning');
+  });
+
+  it('errors once per cell when a student is scheduled twice on the same day', () => {
+    const a = student('Ana', 'a', 'Elm', '2x30:1');
+    const s1 = slot(['a'], 540);
+    const s2 = slot(['a'], 600);
+    const errs = validateSchedule([s1, s2], [a], [], DEFAULT_CONFIG);
+    const sameDay = errs.filter((e) => /also scheduled at/i.test(e.message));
+    expect(sameDay).toHaveLength(2);
+    expect(sameDay.every((e) => e.severity === 'error')).toBe(true);
+    // Each error names its own cell and points at the other time.
+    expect(errorAppliesToCard(sameDay.find((e) => e.sessionId === s1.id)!, s1.id, 'a')).toBe(true);
+    expect(errorAppliesToCard(sameDay.find((e) => e.sessionId === s1.id)!, s2.id, 'a')).toBe(false);
   });
 
   it('does NOT flag a valid same-class group within caps', () => {
@@ -87,12 +100,64 @@ describe('validator — co-location grouping messages', () => {
     expect(errs.filter((e) => e.type === 'group_size' || e.type === 'wrong_class_mix')).toHaveLength(0);
   });
 
+  it('does NOT flag a student with a mixed mandate (1x30:1, 2x30:2) placed in a group', () => {
+    // Bug 3: both students have an individual AND a group-eligible mandate.
+    const a = student('Xavier', 'a', 'Elm', '1x30:1, 2x30:2');
+    const b = student('Roger', 'b', 'Elm', '1x30:1, 2x30:2');
+    const errs = validateSchedule([slot(['a', 'b'], 540)], [a, b], [], DEFAULT_CONFIG);
+    expect(errs.some((e) => /individual only/i.test(e.message))).toBe(false);
+    expect(errs.filter((e) => e.type === 'group_size')).toHaveLength(0);
+  });
+
+  it('does NOT flag a "1x30: group" (space) student placed in a group', () => {
+    const a = student('Asa', 'a', 'Elm', '1x30: group');
+    const b = student('Ben', 'b', 'Elm', '1x30:3');
+    const errs = validateSchedule([slot(['a', 'b'], 540)], [a, b], [], DEFAULT_CONFIG);
+    expect(errs.some((e) => /individual only/i.test(e.message))).toBe(false);
+  });
+
   it('treats same-slot students as a group, not a provider double-booking', () => {
     const a = student('Ana', 'a', 'Elm', '1x30:3');
     const b = student('Ben', 'b', 'Elm', '1x30:3');
     const sessions = [slot(['a'], 540), slot(['b'], 540)];
     const errs = validateSchedule(sessions, [a, b], [], DEFAULT_CONFIG);
     expect(errs.filter((e) => e.type === 'double_booking')).toHaveLength(0);
+  });
+
+  it('a cross-provider conflict rings only the conflicting card, not the student’s other cards', () => {
+    const a = student('Arahli', 'a', 'Elm', '2x30:1');
+    const conflictSlot = slot(['a'], 540);
+    const cleanSlot = slot(['a'], 600);
+    const conflicts = [
+      {
+        studentId: 'a',
+        studentName: 'Arahli X',
+        day: 'Monday' as const,
+        startTime: 540,
+        endTime: 570,
+        otherProvider: 'SETSS',
+        description: 'x',
+      },
+    ];
+    const errs = validateSchedule([conflictSlot, cleanSlot], [a], conflicts, DEFAULT_CONFIG);
+    const cp = errs.find((e) => e.type === 'cross_provider_conflict')!;
+    expect(errorAppliesToCard(cp, conflictSlot.id, 'a')).toBe(true);
+    expect(errorAppliesToCard(cp, cleanSlot.id, 'a')).toBe(false);
+  });
+
+  it('an over-cap warning rings grouped cards but not the student’s individual card', () => {
+    const a = student('Kalena', 'a', 'Elm', '1x30:3'); // 1 group allowed
+    const b = student('Ben', 'b', 'Elm', '1x30:3');
+    const c = student('Cy', 'c', 'Elm', '1x30:3');
+    const grouped1 = slot(['a', 'b'], 540);
+    const grouped2 = { ...slot(['a', 'c'], 540), day: 'Tuesday' as const };
+    const solo = { ...slot(['a'], 600), day: 'Thursday' as const };
+    const errs = validateSchedule([grouped1, grouped2, solo], [a, b, c], [], DEFAULT_CONFIG);
+    const overCap = errs.find((e) => /is in 2 group session/i.test(e.message))!;
+    expect(overCap.severity).toBe('warning');
+    expect(errorAppliesToCard(overCap, grouped1.id, 'a')).toBe(true);
+    expect(errorAppliesToCard(overCap, grouped2.id, 'a')).toBe(true);
+    expect(errorAppliesToCard(overCap, solo.id, 'a')).toBe(false); // individual card unaffected
   });
 
   it('still flags a provider overlap at a different start time', () => {

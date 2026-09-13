@@ -46,6 +46,17 @@ export function buildNameIndex(students: Student[]): NameIndex {
   return { students, firstNameIndex, fullNameIndex, initialsIndex };
 }
 
+/** Does `rest` (a last name or last initial from a schedule cell) point at `lastName`? */
+export function lastNameMatches(lastName: string, rest: string): boolean {
+  const ln = lastName.toLowerCase().trim();
+  if (!ln || !rest) return false;
+  if (ln.startsWith(rest) || rest.startsWith(ln)) return true;
+  // Any word of a multi-part last name appearing in the token ("… Van Penrose").
+  if (ln.split(/\s+/).some((w) => w.length >= 2 && rest.includes(w))) return true;
+  // Last-initial only ("Asa D" → Demby).
+  return ln[0] === rest[0];
+}
+
 export function isNonStudentToken(rawName: string): boolean {
   const alpha = rawName
     .toLowerCase()
@@ -73,13 +84,23 @@ export function matchExternalName(rawName: string, index: NameIndex): string[] {
   const fullMatch = fullNameIndex.get(cleaned);
   if (fullMatch) return [fullMatch.osisNumber];
 
-  const firstNameMatch = firstNameIndex.get(cleaned);
-  if (firstNameMatch) return firstNameMatch.map((s) => s.osisNumber);
-
-  const firstWord = cleaned.split(/\s+/)[0].replace(/\.$/, '');
-  if (firstWord && firstWord.length >= 2) {
-    const firstWordMatch = firstNameIndex.get(firstWord);
-    if (firstWordMatch) return firstWordMatch.map((s) => s.osisNumber);
+  // First name (exact word, or the first word of a longer token like "Asa D").
+  const words = cleaned.split(/\s+/);
+  const firstWord = words[0].replace(/\.$/, '');
+  const rest = words.slice(1).join(' ').replace(/\./g, '').trim();
+  const byFirst =
+    firstNameIndex.get(cleaned) ??
+    (firstWord.length >= 2 ? firstNameIndex.get(firstWord) : undefined);
+  if (byFirst && byFirst.length > 0) {
+    if (byFirst.length === 1) return [byFirst[0].osisNumber];
+    // Multiple students share this first name (e.g. two "Asa"s). Use the rest of
+    // the token — a last name or last initial ("Asa D" → Demby, "Asa P" → Penrose)
+    // — to narrow it down. If nothing narrows it, fall back to all matches.
+    if (rest) {
+      const narrowed = byFirst.filter((s) => lastNameMatches(s.lastName, rest));
+      if (narrowed.length >= 1) return narrowed.map((s) => s.osisNumber);
+    }
+    return byFirst.map((s) => s.osisNumber);
   }
 
   const stripped = cleaned.replace(/\./g, '');

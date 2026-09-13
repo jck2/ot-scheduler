@@ -20,7 +20,6 @@ let counter = 0;
 // startTime defaults to a unique slot per session so sessions are NOT co-located
 // unless a test deliberately gives two sessions the same startTime.
 function session(studentIds: string[], startTime = 540 + counter * 30): ScheduledSession {
-  const type = studentIds.length === 1 ? 'individual' : studentIds.length === 2 ? 'pair' : 'group';
   return {
     id: `s${counter++}`,
     day: 'Monday',
@@ -28,7 +27,6 @@ function session(studentIds: string[], startTime = 540 + counter * 30): Schedule
     endTime: startTime + 30,
     studentIds,
     mandateIndices: Object.fromEntries(studentIds.map((id) => [id, 0])),
-    type,
     locked: false,
   };
 }

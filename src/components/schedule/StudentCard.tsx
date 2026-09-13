@@ -1,23 +1,31 @@
+import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useDraggable } from '@dnd-kit/core';
 import type { ScheduledSession, Student, ValidationError } from '@/types';
 import { minutesToTime } from '@/utils/timeUtils';
 
-// Rotating colors for group visual linking
-const GROUP_COLORS = [
-  'border-l-violet-400',
-  'border-l-teal-400',
-  'border-l-orange-400',
-  'border-l-pink-400',
-  'border-l-cyan-400',
-  'border-l-lime-400',
-];
+// Card fill by grade level — Amanda's cells use SOLID, high-contrast colors so they
+// stand out from the pale other-provider overlay. Cool hues (away from the amber
+// warning ring and red error ring) keep those rings legible on any grade. Grade 4
+// (blue) and 5 (violet) are the common ones.
+const GRADE_STYLE: Record<number, string> = {
+  [-1]: 'bg-pink-200',
+  0: 'bg-fuchsia-200',
+  1: 'bg-lime-200',
+  2: 'bg-emerald-200',
+  3: 'bg-teal-200',
+  4: 'bg-sky-300',
+  5: 'bg-violet-300',
+};
 
-function groupColor(sessionId: string): string {
-  let hash = 0;
-  for (let i = 0; i < sessionId.length; i++) {
-    hash = (hash * 31 + sessionId.charCodeAt(i)) | 0;
-  }
-  return GROUP_COLORS[Math.abs(hash) % GROUP_COLORS.length];
+export function gradeCardStyle(grade: number | undefined): string {
+  return (grade !== undefined && GRADE_STYLE[grade]) || 'bg-slate-200';
+}
+
+export function gradeLabel(grade: number): string {
+  if (grade === -1) return 'Pre-K';
+  if (grade === 0) return 'K';
+  return `Grade ${grade}`;
 }
 
 interface StudentCardProps {
@@ -26,11 +34,10 @@ interface StudentCardProps {
   studentMap: Map<string, Student>;
   errors: ValidationError[];
   onRemoveStudent: (sessionId: string, studentId: string) => void;
-  // All students sharing this slot (across every session in the cell). Grouping is
-  // inferred from this co-location, not from session.studentIds/session.type.
+  // All students sharing this slot (across every session in the cell). Individual
+  // vs group is inferred from this co-location.
   slotStudentIds: string[];
   slotCount: number;
-  slotColorKey: string;
 }
 
 export function StudentCard({
@@ -41,7 +48,6 @@ export function StudentCard({
   onRemoveStudent,
   slotStudentIds,
   slotCount,
-  slotColorKey,
 }: StudentCardProps) {
   const dragId = `${session.id}::${studentId}`;
   const {
@@ -51,12 +57,17 @@ export function StudentCard({
     isDragging,
   } = useDraggable({ id: dragId });
 
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [hover, setHover] = useState(false);
+  const setRefs = (el: HTMLDivElement | null) => {
+    setNodeRef(el);
+    cardRef.current = el;
+  };
+
   const student = studentMap.get(studentId);
   const firstName = student?.firstName ?? studentId.slice(0, 6);
 
   const isGroup = slotCount > 1;
-  // Color by slot so co-located students (even in separate sessions) share one color.
-  const groupBorder = isGroup ? groupColor(slotColorKey) : '';
 
   const fullNames = slotStudentIds.map((id) => {
     const s = studentMap.get(id);
@@ -80,34 +91,38 @@ export function StudentCard({
   // Build tooltip lines
   const tooltipParts: string[] = [
     typeDescription,
-    `${session.day} ${minutesToTime(session.startTime)}\u2013${minutesToTime(session.endTime)}`,
+    `${session.day} ${minutesToTime(session.startTime)}–${minutesToTime(session.endTime)}`,
     `Students: ${fullNames.join(', ')}`,
     `Class: ${Array.from(classes).join(', ')}`,
   ];
   if (actualErrors.length > 0) {
     tooltipParts.push('');
-    for (const err of actualErrors) tooltipParts.push(`\u2022 ${err.message}`);
+    for (const err of actualErrors) tooltipParts.push(`• ${err.message}`);
   }
   if (warnings.length > 0) {
     tooltipParts.push('');
-    for (const w of warnings) tooltipParts.push(`\u2022 ${w.message}`);
+    for (const w of warnings) tooltipParts.push(`• ${w.message}`);
   }
 
   return (
     <div
-      ref={setNodeRef}
+      ref={setRefs}
       {...attributes}
       {...listeners}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{ opacity: isDragging ? 0.4 : 1 }}
-      className={`bg-indigo-50 border border-indigo-200 rounded px-2 py-0.5 text-xs cursor-grab active:cursor-grabbing group/card relative ${
-        isGroup ? `border-l-[3px] ${groupBorder}` : ''
+      className={`${gradeCardStyle(student?.grade)} rounded px-2 py-0.5 text-xs cursor-grab active:cursor-grabbing group/card relative ${
+        hasActualError ? 'ring-[3px] ring-red-500' : hasWarning ? 'ring-2 ring-amber-400' : ''
       }`}
     >
       <div className="flex items-center justify-between gap-1">
         <span className="font-medium text-gray-800 truncate">
           {hasActualError && <span className="text-red-500 mr-0.5" title="Error">!</span>}
           {!hasActualError && hasWarning && (
-            <span className="text-amber-400 mr-0.5 font-normal" title="Heads up (not blocking)">ⓘ</span>
+            <span className="text-amber-400 mr-0.5 font-normal" title="Heads up (not blocking)">
+              {'ⓘ'}
+            </span>
           )}
           {firstName}
         </span>
@@ -117,14 +132,11 @@ export function StudentCard({
           )}
         </span>
       </div>
-      {/* CSS hover tooltip — works even with drag listeners */}
-      <div className="pointer-events-none absolute left-0 bottom-full mb-1 z-50 hidden group-hover/card:block">
-        <div className="bg-gray-900 text-white text-[10px] leading-snug rounded px-2 py-1.5 shadow-lg whitespace-pre-wrap max-w-[220px]">
-          {tooltipParts.map((line, i) => (
-            <div key={i}>{line || '\u00A0'}</div>
-          ))}
-        </div>
-      </div>
+
+      {/* Tooltip is portaled to <body> with fixed positioning so the grid's
+          overflow container can never clip it — near the top OR bottom of screen. */}
+      {hover && <CardTooltip anchor={cardRef.current} lines={tooltipParts} />}
+
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -136,5 +148,37 @@ export function StudentCard({
         x
       </button>
     </div>
+  );
+}
+
+const TOOLTIP_WIDTH = 240;
+
+function CardTooltip({ anchor, lines }: { anchor: HTMLElement | null; lines: string[] }) {
+  if (!anchor || typeof document === 'undefined') return null;
+  const rect = anchor.getBoundingClientRect();
+
+  // Flip below the card when there isn't room above (near the top of the screen).
+  const estHeight = 20 + lines.length * 14;
+  const showBelow = rect.top < estHeight + 12;
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - TOOLTIP_WIDTH - 8));
+  const top = showBelow ? rect.bottom + 6 : rect.top - 6;
+
+  return createPortal(
+    <div
+      className="pointer-events-none fixed z-[9999]"
+      style={{
+        left,
+        top,
+        transform: showBelow ? 'none' : 'translateY(-100%)',
+        maxWidth: TOOLTIP_WIDTH,
+      }}
+    >
+      <div className="bg-gray-900 text-white text-[10px] leading-snug rounded px-2 py-1.5 shadow-lg whitespace-pre-wrap">
+        {lines.map((line, i) => (
+          <div key={i}>{line || ' '}</div>
+        ))}
+      </div>
+    </div>,
+    document.body
   );
 }

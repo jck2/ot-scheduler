@@ -293,7 +293,6 @@ function scheduleGroupedSession(
     endTime: bestSlot.endTime,
     studentIds,
     mandateIndices,
-    type: studentIds.length === 1 ? 'individual' : studentIds.length === 2 ? 'pair' : 'group',
     locked: false,
   };
 }
@@ -361,7 +360,6 @@ function scheduleIndividualSession(
     endTime: bestSlot.endTime,
     studentIds: [request.studentId],
     mandateIndices: { [request.studentId]: request.mandateIndex },
-    type: 'individual',
     locked: false,
   };
 }

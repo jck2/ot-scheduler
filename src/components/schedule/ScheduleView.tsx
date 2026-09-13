@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   DndContext,
   type DragEndEvent,
@@ -13,6 +13,7 @@ import { nextSessionId, initManualIdCounter } from '@/store/useAppStore';
 import { validateSchedule, getMandateProgress } from '@/scheduling/validator';
 import type { DayOfWeek, ScheduledSession } from '@/types';
 import { WeeklyGrid } from './WeeklyGrid';
+import { gradeCardStyle, gradeLabel } from './StudentCard';
 import { StudentList } from '../roster/StudentList';
 import { ValidationPanel } from './ValidationPanel';
 import { SettingsPanel } from '../settings/SettingsPanel';
@@ -22,15 +23,11 @@ function ColorKey() {
   return (
     <div className="flex items-center gap-3 text-xs text-gray-600">
       <div className="flex items-center gap-1">
-        <span className="inline-block w-3 h-3 rounded border bg-indigo-50 border-indigo-200" />
-        <span>Amanda</span>
-      </div>
-      <div className="flex items-center gap-1">
-        <span className="text-red-500 font-bold">!!</span>
+        <span className="inline-block w-3 h-3 rounded bg-gray-100 ring-[3px] ring-red-500" />
         <span>Error</span>
       </div>
       <div className="flex items-center gap-1">
-        <span className="text-amber-500 font-bold">!</span>
+        <span className="inline-block w-3 h-3 rounded bg-gray-100 ring-2 ring-amber-400" />
         <span>Warning</span>
       </div>
     </div>
@@ -85,7 +82,15 @@ export function ScheduleView() {
     })
     .filter((x): x is { id: string; label: string } => x !== null);
 
-  const errorCount = validationErrors.filter((e) => e.severity === 'error').length;
+  const gradesPresent = useMemo(
+    () => [...new Set(students.map((s) => s.grade))].sort((a, b) => a - b),
+    [students]
+  );
+
+  const errorList = validationErrors.filter((e) => e.severity === 'error');
+  const warningList = validationErrors.filter((e) => e.severity === 'warning');
+  const errorCount = errorList.length;
+  const warningCount = warningList.length;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -96,6 +101,13 @@ export function ScheduleView() {
     const errors = validateSchedule(updated, students, filteredConflicts, config);
     setValidationErrors(errors);
   }, [students, filteredConflicts, config, setValidationErrors]);
+
+  // validationErrors isn't persisted, so recompute whenever the schedule view is
+  // shown or its inputs change — otherwise the counts/rings are empty after a reload
+  // until the user drags something.
+  useEffect(() => {
+    revalidate();
+  }, [revalidate, sessions]);
 
   const handleRemoveStudent = useCallback(
     (sessionId: string, studentId: string) => {
@@ -239,7 +251,6 @@ export function ScheduleView() {
         endTime,
         studentIds: [studentId],
         mandateIndices: { [studentId]: mandateIndex },
-        type: 'individual',
         locked: true,
       };
       addSession(newSession);
@@ -268,15 +279,75 @@ export function ScheduleView() {
           {/* Toolbar */}
           <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200">
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">
+              <span
+                className="text-sm text-gray-600"
+                title="Sessions = time blocks Amanda runs (a group counts once). Student-slots = total student sessions delivered (what mandates are counted against)."
+              >
                 {sessions.length} sessions
-              </span>
-              {errorCount > 0 && (
-                <span className="text-xs text-red-600 font-medium" title="Check the validation panel in the sidebar for details">
-                  {errorCount} error{errorCount !== 1 ? 's' : ''}
+                <span className="text-gray-400">
+                  {' · '}
+                  {sessions.reduce((sum, s) => sum + s.studentIds.length, 0)} student-slots
                 </span>
+              </span>
+              {(errorCount > 0 || warningCount > 0) && (
+                <div className="relative group/issues">
+                  <span className="text-xs font-medium flex items-center gap-2 cursor-default">
+                    {errorCount > 0 && (
+                      <span className="text-red-600">
+                        {errorCount} error{errorCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {warningCount > 0 && (
+                      <span className="text-amber-500">
+                        {warningCount} warning{warningCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </span>
+                  <div className="hidden group-hover/issues:block absolute left-0 top-full mt-1 z-50 w-96 max-h-80 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl p-2 text-left cursor-default">
+                    {errorList.length > 0 && (
+                      <>
+                        <p className="text-[11px] font-semibold text-red-600 uppercase tracking-wide px-1 mb-1">
+                          Errors ({errorList.length})
+                        </p>
+                        <div className="space-y-1 mb-2">
+                          {errorList.map((e, i) => (
+                            <p key={`e${i}`} className="flex gap-1.5 text-xs text-red-700 px-2 py-1 bg-red-50 border border-red-200 rounded">
+                              <span className="text-red-500 font-bold shrink-0">!</span>
+                              <span>{e.message}</span>
+                            </p>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {warningList.length > 0 && (
+                      <>
+                        <p className="text-[11px] font-medium text-amber-500 uppercase tracking-wide px-1 mb-1">
+                          Heads up ({warningList.length})
+                        </p>
+                        <div className="space-y-1">
+                          {warningList.map((w, i) => (
+                            <p key={`w${i}`} className="flex gap-1.5 text-xs text-gray-500 px-2 py-1 bg-amber-50/60 rounded">
+                              <span className="text-amber-400 shrink-0">ⓘ</span>
+                              <span>{w.message}</span>
+                            </p>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
               )}
               <ColorKey />
+              {gradesPresent.length > 0 && (
+                <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                  {gradesPresent.map((g) => (
+                    <span key={g} className="inline-flex items-center gap-1">
+                      <span className={`inline-block w-3 h-3 rounded border ${gradeCardStyle(g)}`} />
+                      {gradeLabel(g)}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="inline-flex rounded border border-gray-300 text-sm overflow-hidden">
                 {(['self', 'both', 'others'] as const).map((view) => {
                   const labels = { self: 'Mine', both: 'Both', others: 'Others' };
