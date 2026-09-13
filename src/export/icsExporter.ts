@@ -44,10 +44,6 @@ export function exportScheduleIcs(
       })
       .join(', ');
 
-    const typeLabel =
-      session.type === 'individual' ? '1:1' :
-        session.type === 'pair' ? '1:2' : `Group (${session.studentIds.length})`;
-
     const eventDate = getNextDateForDay(session.day, startDate);
     const startHour = Math.floor(session.startTime / 60);
     const startMinute = session.startTime % 60;
@@ -61,8 +57,8 @@ export function exportScheduleIcs(
     }
 
     events.push({
-      title: `OT: ${names} (${typeLabel})`,
-      description: `OT session - ${typeLabel}\nStudents: ${names}`,
+      title: `OT: ${names}`,
+      description: `Students: ${names}`,
       start: [
         eventDate.getFullYear(),
         eventDate.getMonth() + 1,

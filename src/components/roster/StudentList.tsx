@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { useAppStore } from '@/store/useAppStore';
-import { getMandateProgress } from '@/scheduling/validator';
+import { getStudentSessionSummary } from '@/scheduling/validator';
 import { MandateProgress } from './MandateProgress';
 import type { Student } from '@/types';
 
 function DraggableStudentRow({ student }: { student: Student }) {
   const sessions = useAppStore((s) => s.sessions);
-  const progress = getMandateProgress(student, sessions);
-  const hasUnfulfilled = progress.some((p) => p.scheduled < p.required);
+  const summary = getStudentSessionSummary(student, sessions);
+  const hasUnfulfilled = summary.totalScheduled < summary.totalRequired;
 
   const {
     attributes,
@@ -58,13 +58,26 @@ export function StudentList() {
     );
   }, [students, filter]);
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, typeof filtered>();
+  // Group by class, but normalize the key (trim + case-insensitive) so "Elm",
+  // "elm " and "ELM" collapse into one group instead of separate headers. Students
+  // with no class listed go into a single labeled bucket rendered last, rather than
+  // under a blank header.
+  const NO_CLASS = 'No class listed';
+  const groups = useMemo(() => {
+    const map = new Map<string, { label: string; students: typeof filtered }>();
     for (const s of filtered) {
-      if (!map.has(s.className)) map.set(s.className, []);
-      map.get(s.className)!.push(s);
+      const trimmed = s.className.trim();
+      const key = trimmed ? trimmed.toLowerCase() : '__none__';
+      const label = trimmed || NO_CLASS;
+      if (!map.has(key)) map.set(key, { label, students: [] });
+      map.get(key)!.students.push(s);
     }
-    return map;
+    return [...map.values()].sort((a, b) => {
+      // Named classes first (alphabetical), the "no class" bucket last.
+      if (a.label === NO_CLASS) return 1;
+      if (b.label === NO_CLASS) return -1;
+      return a.label.localeCompare(b.label);
+    });
   }, [filtered]);
 
   return (
@@ -82,13 +95,14 @@ export function StudentList() {
         />
       </div>
       <div className="flex-1 overflow-y-auto p-2 space-y-3">
-        {Array.from(grouped.entries()).map(([className, classStudents]) => (
-          <div key={className}>
+        {groups.map((group) => (
+          <div key={group.label}>
             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 px-1">
-              {className}
+              {group.label}{' '}
+              <span className="text-gray-300 normal-case">({group.students.length})</span>
             </h4>
             <div className="space-y-1">
-              {classStudents.map((s) => (
+              {group.students.map((s) => (
                 <DraggableStudentRow key={s.osisNumber} student={s} />
               ))}
             </div>

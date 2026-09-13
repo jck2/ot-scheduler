@@ -54,17 +54,27 @@ export function TimeSlotCell({
 
   const hasExternals = externalSessions.length > 0;
 
-  // Compute drop validity when hovering
-  let dropValid: boolean | null = null; // null = no active hover
+  // Drops are always allowed now (co-location = intended group). When the group
+  // that would result is problematic (different class, over the size cap), hint in
+  // amber — the drop still works and the validator explains the issue afterward.
+  let dropClean: boolean | null = null; // null = no active hover
   if (isOver && activeDrag) {
-    dropValid = checkDropValid(activeDrag, sessions, studentMap);
+    dropClean = checkDropValid(activeDrag, sessions, studentMap);
   }
 
   const hoverClass = isOver
-    ? dropValid === false
-      ? 'ring-2 ring-red-400 ring-inset'
+    ? dropClean === false
+      ? 'ring-2 ring-amber-400 ring-inset'
       : 'ring-2 ring-indigo-300 ring-inset'
     : '';
+
+  // Everyone scheduled in THIS slot (across every session in the cell). Grouping is
+  // inferred from co-location, so all students sharing the slot are one group — even
+  // if they came from separate session objects (manual drops, import).
+  const slotStudentIds = [...new Set(sessions.flatMap((s) => s.studentIds))];
+  const slotCount = slotStudentIds.length;
+  // Stable per-slot key so all cards in the slot share one group color.
+  const slotColorKey = `${day}-${startTime}`;
 
   // Flatten sessions into per-student entries
   const studentEntries: { session: ScheduledSession; studentId: string }[] = [];
@@ -85,6 +95,9 @@ export function TimeSlotCell({
           studentMap={studentMap}
           errors={errors}
           onRemoveStudent={onRemoveStudent}
+          slotStudentIds={slotStudentIds}
+          slotCount={slotCount}
+          slotColorKey={slotColorKey}
         />
       );
     });

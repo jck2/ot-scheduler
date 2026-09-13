@@ -48,27 +48,20 @@ export function exportScheduleXlsx(
         row.push(null);
         classRow.push(null);
       } else {
-        const names = slot
-          .map((s) =>
-            s.studentIds
-              .map((id) => {
-                const st = studentMap.get(id);
-                return st ? `${st.firstName} ${st.lastName.charAt(0)}.` : id;
-              })
-              .join(', ')
-          )
-          .join(' | ');
+        // Everyone in this block (co-located students are one group), names only:
+        // first name + last initial. No group/type annotations.
+        const ids = [...new Set(slot.flatMap((s) => s.studentIds))];
+        const names = ids
+          .map((id) => {
+            const st = studentMap.get(id);
+            return st ? `${st.firstName} ${st.lastName.charAt(0)}.` : id;
+          })
+          .join(', ');
 
-        const types = slot.map((s) => {
-          if (s.type === 'individual') return '1:1';
-          if (s.type === 'pair') return '1:2';
-          return `1:${s.studentIds.length}`;
-        });
+        row.push(names);
 
-        row.push(`${names} (${types.join(', ')})`);
-
-        // Determine class from first student of first session in this slot
-        const firstStudent = studentMap.get(slot[0].studentIds[0]);
+        // Track class only for cell coloring (not shown as text).
+        const firstStudent = studentMap.get(ids[0]);
         classRow.push(firstStudent?.className ?? null);
       }
     }
@@ -117,42 +110,7 @@ export function exportScheduleXlsx(
 
   XLSX.utils.book_append_sheet(wb, ws, 'Schedule');
 
-  // Add student summary sheet
-  const summaryRows: string[][] = [
-    ['Student', 'Grade', 'Class', 'Mandate', 'Sessions Scheduled'],
-  ];
-  for (const student of students) {
-    const sessionCount = sessions.filter((s) =>
-      s.studentIds.includes(student.osisNumber)
-    ).length;
-    const totalRequired = student.mandateSessions.reduce(
-      (sum, m) => sum + m.frequency,
-      0
-    );
-    summaryRows.push([
-      `${student.firstName} ${student.lastName}`,
-      String(student.grade),
-      student.className,
-      student.mandateRaw,
-      `${sessionCount}/${totalRequired}`,
-    ]);
-  }
-  const ws2 = XLSX.utils.aoa_to_sheet(summaryRows);
-  ws2['!cols'] = [{ wch: 25 }, { wch: 8 }, { wch: 15 }, { wch: 20 }, { wch: 18 }];
-
-  // Style summary header
-  for (let c = 0; c < summaryRows[0].length; c++) {
-    const cellRef = XLSX.utils.encode_cell({ r: 0, c });
-    if (ws2[cellRef]) {
-      ws2[cellRef].s = {
-        font: { bold: true },
-        fill: { patternType: 'solid', fgColor: { rgb: 'F3F4F6' } },
-      };
-    }
-  }
-
-  XLSX.utils.book_append_sheet(wb, ws2, 'Student Summary');
-
-  // Download
+  // Just the schedule grid — names + days/times only. No student-summary /
+  // mandate / grouping sheet.
   XLSX.writeFile(wb, 'ot-schedule.xlsx');
 }

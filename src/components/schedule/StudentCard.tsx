@@ -26,6 +26,11 @@ interface StudentCardProps {
   studentMap: Map<string, Student>;
   errors: ValidationError[];
   onRemoveStudent: (sessionId: string, studentId: string) => void;
+  // All students sharing this slot (across every session in the cell). Grouping is
+  // inferred from this co-location, not from session.studentIds/session.type.
+  slotStudentIds: string[];
+  slotCount: number;
+  slotColorKey: string;
 }
 
 export function StudentCard({
@@ -34,6 +39,9 @@ export function StudentCard({
   studentMap,
   errors,
   onRemoveStudent,
+  slotStudentIds,
+  slotCount,
+  slotColorKey,
 }: StudentCardProps) {
   const dragId = `${session.id}::${studentId}`;
   const {
@@ -46,21 +54,22 @@ export function StudentCard({
   const student = studentMap.get(studentId);
   const firstName = student?.firstName ?? studentId.slice(0, 6);
 
-  const isGroup = session.studentIds.length > 1;
-  const groupBorder = isGroup ? groupColor(session.id) : '';
+  const isGroup = slotCount > 1;
+  // Color by slot so co-located students (even in separate sessions) share one color.
+  const groupBorder = isGroup ? groupColor(slotColorKey) : '';
 
-  const fullNames = session.studentIds.map((id) => {
+  const fullNames = slotStudentIds.map((id) => {
     const s = studentMap.get(id);
     return s ? `${s.firstName} ${s.lastName}` : id;
   });
 
   const typeDescription =
-    session.type === 'individual' ? 'Individual session' :
-      session.type === 'pair' ? 'Pair session (2 students)' :
-        `Group session (${session.studentIds.length} students)`;
+    slotCount <= 1 ? 'Individual session' :
+      slotCount === 2 ? 'Pair session (2 students)' :
+        `Group session (${slotCount} students)`;
 
   const classes = new Set(
-    session.studentIds.map((id) => studentMap.get(id)?.className ?? '?')
+    slotStudentIds.map((id) => studentMap.get(id)?.className ?? '?')
   );
 
   const actualErrors = errors.filter((e) => e.severity === 'error');
@@ -96,13 +105,15 @@ export function StudentCard({
     >
       <div className="flex items-center justify-between gap-1">
         <span className="font-medium text-gray-800 truncate">
-          {hasActualError && <span className="text-red-500 mr-0.5">!!</span>}
-          {!hasActualError && hasWarning && <span className="text-amber-500 mr-0.5">!</span>}
+          {hasActualError && <span className="text-red-500 mr-0.5" title="Error">!</span>}
+          {!hasActualError && hasWarning && (
+            <span className="text-amber-400 mr-0.5 font-normal" title="Heads up (not blocking)">ⓘ</span>
+          )}
           {firstName}
         </span>
         <span className="flex items-center gap-0.5 shrink-0">
           {isGroup && (
-            <span className="text-[9px] text-gray-400 font-mono">[{session.studentIds.length}]</span>
+            <span className="text-[9px] text-gray-400 font-mono">[{slotCount}]</span>
           )}
         </span>
       </div>

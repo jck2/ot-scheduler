@@ -54,6 +54,8 @@ describe('extractInCellTime', () => {
   it('strips all time patterns from cleaned text', () => {
     const result = extractInCellTime('Math 8:15-9 Group');
     expect(result).not.toBeNull();
-    expect(result!.cleanedText).toBe('Math Group');
+    // Time ranges are replaced with a newline so multi-name cells split on it —
+    // "Math" and "Group" end up on separate lines, not space-joined.
+    expect(result!.cleanedText).toBe('Math\nGroup');
   });
 });

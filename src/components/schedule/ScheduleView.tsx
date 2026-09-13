@@ -210,7 +210,7 @@ export function ScheduleView() {
 
   function handleDrop(
     studentId: string,
-    className: string,
+    _className: string,
     mandateIndex: number,
     duration: number,
     day: DayOfWeek,
@@ -218,60 +218,19 @@ export function ScheduleView() {
     currentSessions: ScheduledSession[],
     sourceSessionId: string | undefined,
   ) {
-    // Find compatible existing session in target cell
-    const cellSessions = currentSessions.filter(
-      (s) => s.day === day && s.startTime === startTime
+    // Baseline assumption: dropping a student into a block that already has one of
+    // Amanda's sessions means she wants them GROUPED. Always merge into that slot
+    // rather than second-guessing class/mandate rules — the validator explains any
+    // problem afterward (wrong class, too many grouped, group too big, …).
+    const targetSession = currentSessions.find(
+      (s) => s.day === day && s.startTime === startTime && s.id !== sourceSessionId
     );
 
-    let merged = false;
-    for (const session of cellSessions) {
-      // Skip if it's the source session
-      if (sourceSessionId && session.id === sourceSessionId) continue;
-
-      // Check same class
-      const sessionClasses = new Set(
-        session.studentIds.map((id) => studentMap.get(id)?.className ?? '?')
-      );
-      if (sessionClasses.size !== 1 || !sessionClasses.has(className)) continue;
-
-      // Check group size constraints
-      const newSize = session.studentIds.length + 1;
-      const allAllow = session.studentIds.every((sid) => {
-        const s = studentMap.get(sid);
-        if (!s) return false;
-        const mi = session.mandateIndices[sid];
-        const mandate = s.mandateSessions[mi];
-        if (!mandate) return true;
-        if (mandate.groupSize === 1) return false;
-        const max = mandate.groupFlexible ? 3 : mandate.groupSize;
-        return newSize <= max;
-      });
-
-      if (!allAllow) continue;
-
-      // Check if the dragged student's mandate allows this group size
-      const student = studentMap.get(studentId);
-      if (student) {
-        const mandate = student.mandateSessions[mandateIndex];
-        if (mandate && mandate.groupSize === 1) continue;
-        if (mandate && !mandate.groupFlexible && newSize > mandate.groupSize) continue;
-      }
-
-      // Merge into existing session
-      addStudentToSession(session.id, studentId, mandateIndex);
-      useAppStore.getState(); // ensure state is up to date
-      // Lock the session
-      const store = useAppStore.getState();
-      const updatedSession = store.sessions.find((s) => s.id === session.id);
-      if (updatedSession) {
-        useAppStore.getState().updateSession(session.id, { locked: true });
-      }
-      merged = true;
-      break;
-    }
-
-    if (!merged) {
-      // Create a new individual session
+    if (targetSession) {
+      addStudentToSession(targetSession.id, studentId, mandateIndex);
+      useAppStore.getState().updateSession(targetSession.id, { locked: true });
+    } else {
+      // Empty slot → new session for this student.
       const endTime = startTime + duration;
       const newSession: ScheduledSession = {
         id: nextSessionId(),

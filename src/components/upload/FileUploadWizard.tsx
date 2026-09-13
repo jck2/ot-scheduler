@@ -32,6 +32,14 @@ export function FileUploadWizard() {
       // Parse roster CSV
       const csvText = await rosterFile.text();
       const allStudents = parseRosterCSV(csvText);
+      if (allStudents.length === 0) {
+        throw new Error(
+          `No students could be read from "${rosterFile.name}". Expected the columns ` +
+            `First Name, Last Name, Grade, Class, OSIS #, (Occupational Therapy) Mandate, ` +
+            `Provider — either as a header row or as raw data in that order. Double-check ` +
+            `you uploaded the roster (not the schedule) file.`
+        );
+      }
       setAllStudents(allStudents);
 
       // Auto-detect provider

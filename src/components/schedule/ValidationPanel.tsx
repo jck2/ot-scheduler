@@ -36,8 +36,9 @@ export function ValidationPanel() {
           </h4>
           <div className="space-y-1">
             {errors.slice(0, 20).map((e, i) => (
-              <p key={i} className="text-xs text-red-600 px-2 py-1 bg-red-50 rounded">
-                {e.message}
+              <p key={i} className="flex gap-1.5 text-xs text-red-700 px-2 py-1 bg-red-50 border border-red-200 rounded">
+                <span className="text-red-500 font-bold shrink-0">!</span>
+                <span>{e.message}</span>
               </p>
             ))}
             {errors.length > 20 && (
@@ -50,15 +51,21 @@ export function ValidationPanel() {
       )}
       {warnings.length > 0 && (
         <div className="p-2">
-          <h4 className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-1">
-            Warnings ({warnings.length})
+          <h4 className="text-[11px] font-medium text-amber-500 uppercase tracking-wide mb-1">
+            Heads up ({warnings.length})
           </h4>
           <div className="space-y-1">
             {warnings.slice(0, 10).map((w, i) => (
-              <p key={i} className="text-xs text-amber-600 px-2 py-1 bg-amber-50 rounded">
-                {w.message}
+              <p key={i} className="flex gap-1.5 text-xs text-gray-500 px-2 py-1 bg-amber-50/60 rounded">
+                <span className="text-amber-400 shrink-0">ⓘ</span>
+                <span>{w.message}</span>
               </p>
             ))}
+            {warnings.length > 10 && (
+              <p className="text-xs text-amber-300">
+                ...and {warnings.length - 10} more
+              </p>
+            )}
           </div>
         </div>
       )}

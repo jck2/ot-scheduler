@@ -5,3 +5,4 @@ dist
 *.png.tmp
 Screenshot*
 tsconfig.tsbuildinfo
+.DS_Store

@@ -55,7 +55,7 @@ export function ExportDialog() {
         >
           <h3 className="font-semibold text-gray-800">Download as Excel (.xlsx)</h3>
           <p className="text-sm text-gray-500 mt-1">
-            Weekly grid format with student summary sheet.
+            Weekly grid — student names and time slots only.
           </p>
         </button>
 

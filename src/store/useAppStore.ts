@@ -10,6 +10,7 @@ import type {
   ValidationError,
 } from '@/types';
 import { DEFAULT_CONFIG } from '@/utils/constants';
+import { parseMandate } from '@/parsing/mandateParser';
 import { debouncedSave, loadState } from './persistence';
 
 interface AppState {
@@ -219,12 +220,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const saved = await loadState<PersistedState>('app-state');
       if (saved) {
+        // Normalize data saved by older versions so missing/renamed fields can't
+        // crash rendering (e.g. a student without className, a session without
+        // studentIds). Better to load a repaired schedule than white-screen.
         set({
-          allStudents: saved.allStudents ?? [],
-          students: saved.students ?? [],
+          allStudents: (saved.allStudents ?? []).map(sanitizeStudent),
+          students: (saved.students ?? []).map(sanitizeStudent),
           selectedProvider: saved.selectedProvider ?? DEFAULT_CONFIG.providerName,
-          sessions: saved.sessions ?? [],
-          config: saved.config ?? { ...DEFAULT_CONFIG },
+          sessions: (saved.sessions ?? []).map(sanitizeSession),
+          config: { ...DEFAULT_CONFIG, ...(saved.config ?? {}) },
           step: saved.step ?? 'upload',
           excludedStudentIds: saved.excludedStudentIds ?? [],
           providerSchedules: saved.providerSchedules ?? [],
@@ -287,6 +291,42 @@ export function initManualIdCounter(sessions: ScheduledSession[]) {
 
 export function nextSessionId(): string {
   return `manual-${++manualIdCounter}`;
+}
+
+function sanitizeStudent(raw: Partial<Student> | null | undefined): Student {
+  const s = raw ?? {};
+  const mandateRaw = typeof s.mandateRaw === 'string' ? s.mandateRaw : '';
+  return {
+    firstName: typeof s.firstName === 'string' ? s.firstName : '',
+    lastName: typeof s.lastName === 'string' ? s.lastName : '',
+    grade: typeof s.grade === 'number' ? s.grade : 0,
+    className: typeof s.className === 'string' ? s.className : '',
+    osisNumber: typeof s.osisNumber === 'string' ? s.osisNumber : '',
+    mandateRaw,
+    mandateSessions: Array.isArray(s.mandateSessions)
+      ? s.mandateSessions
+      : parseMandate(mandateRaw),
+    provider: typeof s.provider === 'string' ? s.provider : '',
+  };
+}
+
+function sanitizeSession(raw: Partial<ScheduledSession> | null | undefined): ScheduledSession {
+  const s = raw ?? {};
+  const studentIds = Array.isArray(s.studentIds) ? s.studentIds.filter((id) => typeof id === 'string') : [];
+  const type: ScheduledSession['type'] =
+    s.type === 'individual' || s.type === 'pair' || s.type === 'group'
+      ? s.type
+      : studentIds.length === 1 ? 'individual' : studentIds.length === 2 ? 'pair' : 'group';
+  return {
+    id: typeof s.id === 'string' ? s.id : nextSessionId(),
+    day: s.day ?? 'Monday',
+    startTime: typeof s.startTime === 'number' ? s.startTime : 0,
+    endTime: typeof s.endTime === 'number' ? s.endTime : 0,
+    studentIds,
+    mandateIndices: s.mandateIndices && typeof s.mandateIndices === 'object' ? s.mandateIndices : {},
+    type,
+    locked: !!s.locked,
+  };
 }
 
 function persistState(state: AppState) {

@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { minutesToTime, slotsOverlap } from '@/utils/timeUtils';
 import { dayIndex } from '@/utils/timeUtils';
-import type { ExternalSession, Student, ValidationError } from '@/types';
+import type { ExternalSession, ValidationError } from '@/types';
+import { buildNameIndex, matchExternalName } from '@/parsing/overlayMatcher';
 import { TimeSlotCell, type ActiveDragData } from './TimeSlotCell';
 
 interface WeeklyGridProps {
@@ -85,24 +86,8 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
 
   const amandaSheetName = useAppStore((s) => s.amandaSheetName);
 
-  // Build name indices for matching external student names against Amanda's roster
-  const { nameIndex, fullNameIndex, initialsIndex } = useMemo(() => {
-    const nameIdx = new Map<string, Student[]>();
-    const fullIdx = new Map<string, Student>();
-    const initIdx = new Map<string, Student[]>();
-    for (const s of students) {
-      const firstKey = s.firstName.toLowerCase();
-      if (!nameIdx.has(firstKey)) nameIdx.set(firstKey, []);
-      nameIdx.get(firstKey)!.push(s);
-      fullIdx.set(`${s.firstName} ${s.lastName}`.toLowerCase(), s);
-      if (s.firstName.length > 0 && s.lastName.length > 0) {
-        const initials = (s.firstName[0] + s.lastName[0]).toLowerCase();
-        if (!initIdx.has(initials)) initIdx.set(initials, []);
-        initIdx.get(initials)!.push(s);
-      }
-    }
-    return { nameIndex: nameIdx, fullNameIndex: fullIdx, initialsIndex: initIdx };
-  }, [students]);
+  // Build the name index for matching external student names against the roster.
+  const nameIndex = useMemo(() => buildNameIndex(students), [students]);
 
   const externalSessionsByCell = useMemo(() => {
     if (providerView === 'self') return new Map<string, { session: ExternalSession; providerName: string; colorIdx: number; matchedNames: { name: string; studentIds: string[] }[] }[]>();
@@ -114,89 +99,24 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
       (ps) => ps.sheetName !== amandaSheetName && !isOtSheet(ps.sheetName)
     );
 
-    console.log(`[WeeklyGrid] providerView=${providerView}, amandaSheet="${amandaSheetName}"`);
-    console.log(`[WeeklyGrid] ${providerSchedules.length} total providers, ${otherProviders.length} non-OT/non-self`);
-    for (const ps of providerSchedules) {
-      const excluded = ps.sheetName === amandaSheetName ? ' (SELF)' : isOtSheet(ps.sheetName) ? ' (OT-EXCLUDED)' : '';
-      console.log(`  "${ps.sheetName}" — ${ps.sessions.length} sessions${excluded}`);
-    }
-    console.log(`[WeeklyGrid] ${students.length} students for matching, initialsIndex size=${initialsIndex.size}`);
-
-    function findMatchedStudentIds(rawName: string): string[] {
-      const lower = rawName.toLowerCase().trim();
-      // Replace parenthetical with a space so surrounding words don't merge —
-      // e.g. "Aqeela (Magnolia) push in" must stay "aqeela push in", not "aqeelapush in".
-      const cleaned = lower.replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim();
-      if (cleaned.length < 2) return [];
-
-      const ids: string[] = [];
-      const fullMatch = fullNameIndex.get(cleaned);
-      if (fullMatch) {
-        ids.push(fullMatch.osisNumber);
-        return ids;
-      }
-
-      const firstNameMatch = nameIndex.get(cleaned);
-      if (firstNameMatch) {
-        return firstNameMatch.map((s) => s.osisNumber);
-      }
-
-      const firstWord = cleaned.split(/\s+/)[0].replace(/\.$/, '');
-      if (firstWord && firstWord.length >= 2) {
-        const firstWordMatch = nameIndex.get(firstWord);
-        if (firstWordMatch) {
-          return firstWordMatch.map((s) => s.osisNumber);
-        }
-      }
-
-      const stripped = cleaned.replace(/\./g, '');
-      if (stripped.length >= 2 && stripped.length <= 3) {
-        const initials = stripped.slice(0, 2);
-        const initialMatch = initialsIndex.get(initials);
-        if (initialMatch) {
-          return initialMatch.map((s) => s.osisNumber);
-        }
-      }
-
-      if (cleaned.length >= 3) {
-        for (const s of students) {
-          const fn = s.firstName.toLowerCase();
-          if (fn.length >= 3 && fn.includes(cleaned)) {
-            ids.push(s.osisNumber);
-          }
-        }
-      }
-
-      return ids;
-    }
+    const findMatchedStudentIds = (rawName: string) => matchExternalName(rawName, nameIndex);
 
     const excludedSet = new Set(excludedStudentIds);
 
     const map = new Map<string, { session: ExternalSession; providerName: string; colorIdx: number; matchedNames: { name: string; studentIds: string[] }[] }[]>();
     const { slotDuration, endTime: gridEnd } = config;
     const effectiveStart = timeRows.length > 0 ? timeRows[0] : config.startTime;
-    let totalMatched = 0;
-    let totalUnmatched = 0;
     otherProviders.forEach((ps, idx) => {
       const colorIdx = idx % PROVIDER_COLORS.length;
-      let providerMatched = 0;
       for (const ext of ps.sessions) {
         const matchedNames: { name: string; studentIds: string[] }[] = [];
         for (const name of ext.studentNames) {
-          const allIds = findMatchedStudentIds(name);
-          const nonExcludedIds = allIds.filter((id) => !excludedSet.has(id));
+          const nonExcludedIds = findMatchedStudentIds(name).filter((id) => !excludedSet.has(id));
           if (nonExcludedIds.length > 0) {
             matchedNames.push({ name, studentIds: nonExcludedIds });
-          } else if (allIds.length > 0) {
-            console.log(`  [match] "${ps.sheetName}" name "${name}" matched ${allIds.length} student(s) but ALL excluded`);
           }
         }
-        if (matchedNames.length === 0) {
-          totalUnmatched++;
-          continue;
-        }
-        providerMatched++;
-        totalMatched++;
+        if (matchedNames.length === 0) continue;
 
         const entry = { session: ext, providerName: ps.providerName, colorIdx, matchedNames };
 
@@ -208,11 +128,9 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
           }
         }
       }
-      console.log(`  [match] "${ps.sheetName}": ${providerMatched} sessions matched, ${ps.sessions.length - providerMatched} unmatched`);
     });
-    console.log(`[WeeklyGrid] Total: ${totalMatched} matched sessions, ${totalUnmatched} unmatched. Map has ${map.size} cells.`);
     return map;
-  }, [providerView, providerSchedules, amandaSheetName, students, nameIndex, fullNameIndex, initialsIndex, config, timeRows, excludedStudentIds]);
+  }, [providerView, providerSchedules, amandaSheetName, students, nameIndex, config, timeRows, excludedStudentIds]);
 
   return (
     <div className="overflow-auto h-full">

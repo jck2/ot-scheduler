@@ -1,11 +1,16 @@
+import { useState } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { generateSchedule } from '@/scheduling/algorithm';
 import { validateSchedule } from '@/scheduling/validator';
+import { runPreflight, type PreflightIssue } from '@/scheduling/preflight';
 import type { Student } from '@/types';
+import { PreflightModal } from './PreflightModal';
 
 export function ModeSelector() {
   const {
     students,
+    allStudents,
+    selectedProvider,
     conflicts,
     config,
     providerSchedules,
@@ -15,6 +20,31 @@ export function ModeSelector() {
     setValidationErrors,
     setStep,
   } = useAppStore();
+
+  const [preflight, setPreflight] = useState<{
+    issues: PreflightIssue[];
+    action: () => void;
+  } | null>(null);
+
+  // Run the preflight check before an action; if it surfaces anything, show the
+  // popup instead of proceeding straight to the schedule.
+  function guard(mode: 'fresh' | 'import', action: () => void) {
+    const issues = runPreflight({
+      students,
+      allStudents,
+      providerSchedules,
+      conflicts,
+      selectedProvider,
+      amandaSheetName,
+      config,
+      mode,
+    });
+    if (issues.length === 0) {
+      action();
+      return;
+    }
+    setPreflight({ issues, action });
+  }
 
   function handleGenerateFresh() {
     const sessions = generateSchedule(students, conflicts, config);
@@ -143,7 +173,7 @@ export function ModeSelector() {
 
       <div className="space-y-4">
         <button
-          onClick={handleImportExisting}
+          onClick={() => guard('import', handleImportExisting)}
           className="w-full p-6 border-2 border-gray-200 rounded-xl text-left hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
         >
           <h3 className="font-semibold text-gray-800">Import Existing Schedule</h3>
@@ -153,7 +183,7 @@ export function ModeSelector() {
         </button>
 
         <button
-          onClick={handleGenerateFresh}
+          onClick={() => guard('fresh', handleGenerateFresh)}
           className="w-full p-6 border-2 border-gray-200 rounded-xl text-left hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
         >
           <h3 className="font-semibold text-gray-800">Generate Fresh Schedule</h3>
@@ -172,6 +202,18 @@ export function ModeSelector() {
           </>
         )}
       </div>
+
+      {preflight && (
+        <PreflightModal
+          issues={preflight.issues}
+          onProceed={() => {
+            const action = preflight.action;
+            setPreflight(null);
+            action();
+          }}
+          onClose={() => setPreflight(null)}
+        />
+      )}
     </div>
   );
 }
