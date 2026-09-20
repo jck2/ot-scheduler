@@ -160,6 +160,36 @@ describe('validator — co-location grouping messages', () => {
     expect(errorAppliesToCard(overCap, solo.id, 'a')).toBe(false); // individual card unaffected
   });
 
+  it('warns when a restricted class is scheduled in its unavailable time band', () => {
+    const pine = student('Pat', 'a', 'Pine', '1x30:1');
+    const honey = student('Hank', 'b', 'Honeylocust', '1x30:1');
+    const elm = student('Ed', 'c', 'Elm', '1x30:1');
+    const mag = student('Mo', 'd', 'Magnolia', '1x30:1');
+    // 10–11 band (600/630) forbids Pine + Honeylocust; 11–12 (660/690) forbids Elm + Magnolia.
+    const sessions = [
+      slot(['a'], 600), // Pine @10:00 -> warn
+      slot(['b'], 630), // Honeylocust @10:30 -> warn
+      slot(['c'], 660), // Elm @11:00 -> warn
+      slot(['d'], 690), // Magnolia @11:30 -> warn
+    ];
+    const errs = validateSchedule(sessions, [pine, honey, elm, mag], [], DEFAULT_CONFIG);
+    const bandWarnings = errs.filter((e) => e.type === 'class_unavailable');
+    expect(bandWarnings).toHaveLength(4);
+    expect(bandWarnings.every((e) => e.severity === 'warning')).toBe(true);
+  });
+
+  it('does NOT warn when the class is fine for that band (or outside any band)', () => {
+    const pine = student('Pat', 'a', 'Pine', '1x30:1');
+    const elm = student('Ed', 'c', 'Elm', '1x30:1');
+    const sessions = [
+      slot(['a'], 660), // Pine @11:00 -> band B forbids Elm/Magnolia, Pine OK
+      slot(['c'], 600), // Elm @10:00 -> band A forbids Pine/Honeylocust, Elm OK
+      slot(['a'], 540), // Pine @9:00 -> no band
+    ];
+    const errs = validateSchedule(sessions, [pine, elm], [], DEFAULT_CONFIG);
+    expect(errs.some((e) => e.type === 'class_unavailable')).toBe(false);
+  });
+
   it('still flags a provider overlap at a different start time', () => {
     const a = student('Ana', 'a', 'Elm', '2x30:1');
     // Two sessions that overlap but start at different times.

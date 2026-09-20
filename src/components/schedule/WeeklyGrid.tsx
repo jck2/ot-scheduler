@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { minutesToTime, slotsOverlap } from '@/utils/timeUtils';
 import { dayIndex } from '@/utils/timeUtils';
+import { bandForStartTime } from '@/utils/constants';
 import type { ExternalSession } from '@/types';
 import { buildNameIndex, matchExternalName } from '@/parsing/overlayMatcher';
 import { TimeSlotCell, type ActiveDragData } from './TimeSlotCell';
@@ -153,6 +154,7 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
             config.lunchStart,
             config.lunchEnd
           );
+          const bandBg = bandForStartTime(time)?.bgClass;
           const isEarlyRow = time < config.startTime;
 
           return (
@@ -184,6 +186,7 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
                     sessions={cellSessions}
                     studentMap={studentMap}
                     isLunch={isLunch}
+                    bandBg={bandBg}
                     onRemoveStudent={onRemoveStudent}
                     validationErrors={validationErrors}
                     externalSessions={cellExternals}

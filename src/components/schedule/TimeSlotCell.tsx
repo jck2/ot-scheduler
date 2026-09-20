@@ -29,6 +29,7 @@ interface TimeSlotCellProps {
   sessions: ScheduledSession[];
   studentMap: Map<string, Student>;
   isLunch: boolean;
+  bandBg?: string; // restricted-time-band highlight (e.g. 10–11, 11–12)
   onRemoveStudent: (sessionId: string, studentId: string) => void;
   validationErrors: ValidationError[];
   externalSessions: ExternalSessionEntry[];
@@ -43,6 +44,7 @@ export function TimeSlotCell({
   sessions,
   studentMap,
   isLunch,
+  bandBg,
   onRemoveStudent,
   validationErrors,
   externalSessions,
@@ -109,7 +111,7 @@ export function TimeSlotCell({
     <div
       ref={setNodeRef}
       className={`min-h-[3rem] border-b border-r border-gray-200 ${
-        isLunch ? 'bg-amber-50' : ''
+        isLunch ? 'bg-amber-50' : bandBg ?? ''
       } ${hoverClass}`}
     >
       {hasExternals ? (

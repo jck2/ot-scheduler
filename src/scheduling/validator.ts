@@ -1,5 +1,6 @@
 import type { AppConfig, Conflict, DayOfWeek, ScheduledSession, Student, ValidationError } from '@/types';
 import { minutesToTime, slotsOverlap } from '@/utils/timeUtils';
+import { bandForStartTime } from '@/utils/constants';
 
 /** Largest group size any of a student's mandates permits (0 = individual only). */
 export function studentMaxGroupSize(student: Student): number {
@@ -247,6 +248,25 @@ export function validateSchedule(
           message: `${student?.firstName ?? studentId} conflicts with ${conflict.otherProvider} on ${session.day}`,
         });
       }
+    }
+  }
+
+  // Restricted time bands — the provider can't see certain classes then.
+  for (const session of sessions) {
+    const band = bandForStartTime(session.startTime);
+    if (!band) continue;
+    for (const sid of session.studentIds) {
+      const st = studentMap.get(sid);
+      if (!st) continue;
+      const cls = st.className.trim().toLowerCase();
+      if (!cls || !band.restrictedClasses.includes(cls)) continue;
+      errors.push({
+        type: 'class_unavailable',
+        severity: 'warning',
+        studentId: sid,
+        sessionId: session.id,
+        message: `${st.firstName} (${st.className}) can't be seen ${band.label} — that class is unavailable then.`,
+      });
     }
   }
 

@@ -83,7 +83,7 @@ export interface AppConfig {
 }
 
 export interface ValidationError {
-  type: 'unmet_mandate' | 'double_booking' | 'cross_provider_conflict' | 'group_size' | 'wrong_class_mix' | 'time_overflow';
+  type: 'unmet_mandate' | 'double_booking' | 'cross_provider_conflict' | 'group_size' | 'wrong_class_mix' | 'time_overflow' | 'class_unavailable';
   severity: 'error' | 'warning';
   // Card attribution: an issue rings a card (session, student) when the session is
   // in scope AND the student is a subject. studentId/studentIds name the subjects
