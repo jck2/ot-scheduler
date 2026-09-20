@@ -32,14 +32,14 @@ export const RESTRICTED_TIME_BANDS: TimeBand[] = [
     start: 600, // 10:00am
     end: 660, // 11:00am
     label: '10–11',
-    bgClass: 'bg-blue-100',
+    bgClass: 'bg-blue-300',
     restrictedClasses: ['pine', 'honeylocust'],
   },
   {
     start: 660, // 11:00am
     end: 720, // 12:00pm
     label: '11–12',
-    bgClass: 'bg-purple-100',
+    bgClass: 'bg-purple-300',
     restrictedClasses: ['elm', 'magnolia'],
   },
 ];
