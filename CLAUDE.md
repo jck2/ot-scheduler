@@ -214,9 +214,15 @@ definitions, group references, skip-cells like "LUNCH"/"PREP"). Sheets named
   unique UID — and anchors the weekly recurrence to the **Monday on/after export**
   (ignoring any stale past term start/end from `config`). `buildCalendar` is the shared
   core; `buildIcs` (own schedule) and `buildProviderIcs` (an external provider's parsed
-  sheet) feed it. `exportAllSchedulesZip` bundles one `.ics` per calendar — the user's
-  own first, then every other provider in `providerSchedules` (empty ones skipped) —
-  into `schedules.zip` via **fflate** (`zipSync`). Validate changes by parsing the
+  sheet) feed it. **`buildProviderIcs` includes only the user's roster students** — it
+  matches each external name with the overlay matcher (`buildNameIndex` /
+  `matchExternalName`, same as the grid) and shows the roster name (First L.); a session
+  with no roster student is dropped, and a provider with no roster students at all
+  returns `null` (no file). `exportAllSchedulesZip` bundles one `.ics` per calendar —
+  the user's own first, then every other provider in `providerSchedules` that has ≥1
+  roster student (the user's own `amandaSheetName` sheet is skipped — her file comes
+  from the built `sessions`) — plus a `READ ME FIRST.txt`, into `schedules.zip` via
+  **fflate** (`zipSync`). Validate changes by parsing the
   output with `node-ical` (installed `--no-save` for a quick check); don't trust that
   it imports just because it looks right. The `ics` package is still a dep but unused.
 

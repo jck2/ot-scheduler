@@ -1,4 +1,5 @@
 import { zipSync, strToU8 } from 'fflate';
+import { buildNameIndex, matchExternalName } from '@/parsing/overlayMatcher';
 import type {
   AppConfig,
   DayOfWeek,
@@ -233,29 +234,46 @@ export function buildIcs(
   return buildCalendar(events, termStart, termEnd, now);
 }
 
-// Another provider's schedule, parsed from the master workbook. Student names are
-// raw strings (no OSIS to resolve). Returns null when the provider has no usable
-// sessions, so empty calendars are skipped in the zip.
+// Another provider's schedule, parsed from the master workbook. Only the students who
+// are on the user's roster are included — every provider sees many students, but the
+// user only cares about (and should only get a calendar for) her own. External names
+// are matched to roster students with the same overlay matcher the grid uses, and
+// shown by their roster name (First L.). Returns null when none of this provider's
+// sessions involve a roster student, so that provider gets no file in the zip.
 export function buildProviderIcs(
   schedule: ProviderSchedule,
+  students: Student[],
   termStart?: string,
   termEnd?: string,
   now: Date = new Date()
 ): string | null {
+  const nameIndex = buildNameIndex(students);
+  const studentMap = new Map(students.map((s) => [s.osisNumber, s]));
+
   const events: IcsEvent[] = [];
   for (const ext of schedule.sessions) {
-    const names = ext.studentNames.filter((n) => n.trim().length > 0).join(', ');
-    const label = names || ext.rawText.trim();
-    if (!label) continue;
+    const matchedIds = new Set<string>();
+    for (const rawName of ext.studentNames) {
+      for (const id of matchExternalName(rawName, nameIndex)) matchedIds.add(id);
+    }
+    if (matchedIds.size === 0) continue; // no roster students in this session → skip
+
+    const names = [...matchedIds]
+      .map((id) => {
+        const s = studentMap.get(id);
+        return s ? `${s.firstName} ${s.lastName.charAt(0)}.` : id;
+      })
+      .join(', ');
+
     events.push({
       day: ext.day,
       startTime: ext.startTime,
       endTime: ext.endTime,
-      summary: label,
-      description: `${schedule.providerName}${names ? `\n${names}` : ''}`,
+      summary: names,
+      description: `${schedule.providerName}\n${names}`,
     });
   }
-  if (events.length === 0) return null;
+  if (events.length === 0) return null; // provider pulls none of her students → no file
   return buildCalendar(events, termStart, termEnd, now);
 }
 
@@ -389,7 +407,7 @@ export function exportAllSchedulesZip(
   // Every other provider from the master workbook.
   for (const ps of providerSchedules) {
     if (amandaSheetName && ps.sheetName === amandaSheetName) continue;
-    const ics = buildProviderIcs(ps, config.termStartDate, config.termEndDate);
+    const ics = buildProviderIcs(ps, students, config.termStartDate, config.termEndDate);
     if (!ics) continue;
     const name = uniqueFileName(ps.providerName || ps.sheetName, used);
     files[name] = strToU8(ics);

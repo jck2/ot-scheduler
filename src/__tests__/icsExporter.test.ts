@@ -107,22 +107,33 @@ describe('buildProviderIcs', () => {
     return { providerName: name, sheetName: name, sessions };
   }
 
-  it('builds a calendar from an external provider schedule', () => {
+  const roster = [student('Ana', 'Brown', 'a'), student('Ben', 'Cole', 'b')];
+
+  it('includes only roster students, shown by their roster name', () => {
     const ps = provider('Speech - Jane Doe', [
-      { day: 'Monday', startTime: 540, endTime: 570, studentNames: ['Ana B.', 'Ben C.'], rawText: 'Ana B., Ben C.' },
+      // "Zed Q." is NOT on Amanda's roster — must be dropped from the session.
+      { day: 'Monday', startTime: 540, endTime: 570, studentNames: ['Ana B.', 'Zed Q.'], rawText: 'x' },
     ]);
-    const ics = buildProviderIcs(ps, undefined, undefined, NOW)!;
+    const ics = buildProviderIcs(ps, roster, undefined, undefined, NOW)!;
     expect(ics).toContain('BEGIN:VEVENT');
-    expect(ics).toContain('SUMMARY:Ana B.\\, Ben C.');
+    expect(ics).toContain('SUMMARY:Ana B.');
+    expect(ics).not.toContain('Zed');
     expect(ics).toContain('DTSTART;TZID=America/New_York:20261012T090000');
     expect(ics).toContain('DESCRIPTION:Speech - Jane Doe');
+  });
+
+  it('returns null when none of the provider\'s students are on the roster', () => {
+    const ps = provider('Outsider', [
+      { day: 'Monday', startTime: 540, endTime: 570, studentNames: ['Zed Q.', 'Quincy X.'], rawText: 'x' },
+    ]);
+    expect(buildProviderIcs(ps, roster, undefined, undefined, NOW)).toBeNull();
   });
 
   it('returns null when the provider has no usable sessions', () => {
     const ps = provider('Empty', [
       { day: 'Monday', startTime: 540, endTime: 570, studentNames: [], rawText: '' },
     ]);
-    expect(buildProviderIcs(ps, undefined, undefined, NOW)).toBeNull();
+    expect(buildProviderIcs(ps, roster, undefined, undefined, NOW)).toBeNull();
   });
 });
 
