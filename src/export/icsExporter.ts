@@ -134,6 +134,23 @@ interface IcsEvent {
   description: string;
 }
 
+// The date window the recurrence spans, given the (optional) configured term dates
+// and the export date. Shared by the calendar generator and the README so they can't
+// disagree. The anchor is the Monday on/after export by default; a configured term
+// start/end is honored only when still in the future (so stale past dates are ignored).
+export function recurrenceWindow(
+  termStart?: string,
+  termEnd?: string,
+  now: Date = new Date()
+): { start: Date; end: Date } {
+  const today = atMidnight(now);
+  const parsedStart = parseLocalDate(termStart);
+  const start = parsedStart && parsedStart >= today ? parsedStart : upcomingMonday(today);
+  const parsedEnd = parseLocalDate(termEnd);
+  const end = parsedEnd && parsedEnd > start ? parsedEnd : schoolYearEnd(start);
+  return { start, end };
+}
+
 // Build a complete VCALENDAR string from generic weekly events. Shared by the
 // provider's own schedule and every other provider's schedule.
 export function buildCalendar(
@@ -142,18 +159,7 @@ export function buildCalendar(
   termEnd?: string,
   now: Date = new Date()
 ): string {
-  const today = atMidnight(now);
-
-  // Anchor the recurrence to this coming Monday by default. Only honor a configured
-  // term start when it's still in the future — a stale start date from last year
-  // would otherwise push every event into the past (and out of her calendar view).
-  const parsedStart = parseLocalDate(termStart);
-  const anchor = parsedStart && parsedStart >= today ? parsedStart : upcomingMonday(today);
-
-  // Likewise for the end: honor a configured end only if it's after the anchor;
-  // otherwise default to the end of this school year (June 30).
-  const parsedEnd = parseLocalDate(termEnd);
-  const endDate = parsedEnd && parsedEnd > anchor ? parsedEnd : schoolYearEnd(anchor);
+  const { start: anchor, end: endDate } = recurrenceWindow(termStart, termEnd, now);
 
   // With a TZID DTSTART, RFC 5545 requires UNTIL in UTC. Sessions are daytime
   // (Eastern is behind UTC), so a same-date 23:59:59Z bound includes the final day's
@@ -284,8 +290,84 @@ export function exportScheduleIcs(
   triggerDownload(new Blob([ics], { type: 'text/calendar;charset=utf-8' }), 'ot-schedule.ics');
 }
 
+function longDate(d: Date): string {
+  return d.toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+}
+
+// Plain-text setup guide bundled in the zip. Human-facing, so it's written in normal
+// prose (not the terse style used in chat). `calendarFiles` is [filename, label] pairs.
+export function buildReadme(
+  calendarFiles: [string, string][],
+  now: Date,
+  start: Date,
+  end: Date
+): string {
+  const fileList = calendarFiles.map(([file, label]) => `  - ${file}  (${label})`).join('\n');
+  return `OT SCHEDULE — CALENDAR FILES
+Exported ${longDate(now)}
+
+WHAT'S IN THIS ZIP
+------------------
+One calendar file (.ics) per person:
+${fileList}
+
+Each file holds that person's weekly sessions as recurring events, in Eastern
+time (America/New_York). They stay at the correct clock time even after the
+November daylight-saving change.
+
+HOW THE DATES WORK  (please read)
+---------------------------------
+The events recur WEEKLY starting the Monday on or after the day you exported.
+For this export that means:
+
+  First week:  ${longDate(start)}
+  Repeats weekly through:  ${longDate(end)}
+
+The start is tied to WHEN YOU EXPORTED, not to any fixed term date. If you
+export again in a later week, the new events will begin from that later week.
+So if you re-export, delete the previous import first (see below) or you'll end
+up with the schedule in two places.
+
+IMPORT INTO GOOGLE CALENDAR
+---------------------------
+Do this on a computer (the phone app can't import files).
+
+1. (Recommended) Make a separate calendar for each file so you can show, hide,
+   or delete each one on its own:
+   Google Calendar > left sidebar > "Other calendars" > "+" > "Create new
+   calendar". Name it (e.g. the person's name) and click "Create calendar".
+
+2. Import a file:
+   Settings (gear icon) > "Import & export" > "Import".
+   Choose one .ics file, then under "Add to calendar" pick the calendar you made
+   for it, then click "Import". Repeat for each .ics file (one at a time).
+
+BEFORE YOU IMPORT A NEW VERSION — DELETE THE OLD ONE
+----------------------------------------------------
+Importing does NOT replace what's already there; it ADDS events. If you imported
+an earlier version, remove it first so sessions don't show up twice:
+
+  - If you imported into a SEPARATE calendar (recommended): just delete that
+    whole calendar. Settings > click the calendar's name under "Settings for my
+    calendars" > scroll down > "Delete". Then import the new file into a fresh
+    calendar.
+  - If you imported into your MAIN calendar: the events are mixed in with
+    everything else and have to be deleted one by one. This is why a separate
+    calendar per file is strongly recommended.
+
+A NOTE ON CALENDAR NAMES
+------------------------
+Importing a .ics file does not create a calendar by itself — Google adds the
+events to whichever calendar you pick during import. The file names here are
+just labels; they don't set the calendar name. Create and name the calendars
+yourself in step 1.
+`;
+}
+
 // Export a zip with one .ics per calendar: the provider's own schedule first, then
-// one for each other provider found in the master workbook.
+// one for each other provider found in the master workbook, plus a README.
 export function exportAllSchedulesZip(
   sessions: ScheduledSession[],
   students: Student[],
@@ -295,19 +377,28 @@ export function exportAllSchedulesZip(
 ): void {
   const files: Record<string, Uint8Array> = {};
   const used = new Set<string>();
+  const calendarFiles: [string, string][] = [];
 
   // The user's own schedule.
   const ownIcs = buildIcs(sessions, students, config.termStartDate, config.termEndDate);
-  const ownName = uniqueFileName(config.providerName || 'My Schedule', used);
+  const ownLabel = config.providerName || 'My Schedule';
+  const ownName = uniqueFileName(ownLabel, used);
   files[ownName] = strToU8(ownIcs);
+  calendarFiles.push([ownName, `your schedule — ${ownLabel}`]);
 
   // Every other provider from the master workbook.
   for (const ps of providerSchedules) {
     if (amandaSheetName && ps.sheetName === amandaSheetName) continue;
     const ics = buildProviderIcs(ps, config.termStartDate, config.termEndDate);
     if (!ics) continue;
-    files[uniqueFileName(ps.providerName || ps.sheetName, used)] = strToU8(ics);
+    const name = uniqueFileName(ps.providerName || ps.sheetName, used);
+    files[name] = strToU8(ics);
+    calendarFiles.push([name, ps.providerName || ps.sheetName]);
   }
+
+  const now = new Date();
+  const { start, end } = recurrenceWindow(config.termStartDate, config.termEndDate, now);
+  files['READ ME FIRST.txt'] = strToU8(buildReadme(calendarFiles, now, start, end));
 
   const zipped = zipSync(files, { level: 6 });
   // Copy into a fresh ArrayBuffer-backed view so Blob gets a clean buffer.

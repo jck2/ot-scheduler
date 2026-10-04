@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildIcs, buildProviderIcs } from '@/export/icsExporter';
+import { buildIcs, buildProviderIcs, buildReadme, recurrenceWindow } from '@/export/icsExporter';
 import type { ProviderSchedule, ScheduledSession, Student } from '@/types';
 
 function student(first: string, last: string, osis: string): Student {
@@ -123,5 +123,23 @@ describe('buildProviderIcs', () => {
       { day: 'Monday', startTime: 540, endTime: 570, studentNames: [], rawText: '' },
     ]);
     expect(buildProviderIcs(ps, undefined, undefined, NOW)).toBeNull();
+  });
+});
+
+describe('README', () => {
+  it('states the real recurrence window and lists the calendar files', () => {
+    const { start, end } = recurrenceWindow(undefined, undefined, NOW); // NOW = Wed Oct 7 2026
+    const readme = buildReadme(
+      [['Amanda-Huang.ics', 'your schedule — Amanda Huang'], ['Speech.ics', 'Speech']],
+      NOW,
+      start,
+      end
+    );
+    expect(readme).toContain('Amanda-Huang.ics');
+    expect(readme).toContain('Speech.ics');
+    expect(readme).toContain('October 12, 2026'); // first Monday on/after export
+    expect(readme).toContain('June 30, 2027'); // default school-year end
+    expect(readme).toMatch(/delete the (old|previous)/i);
+    expect(readme).toMatch(/Import & export/);
   });
 });
