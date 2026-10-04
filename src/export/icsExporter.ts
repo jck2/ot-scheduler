@@ -12,15 +12,27 @@ function dayToIcsDay(day: DayOfWeek): string {
   return map[day];
 }
 
-function getNextDateForDay(day: DayOfWeek, after: Date): Date {
+// Parse a "YYYY-MM-DD" (from <input type="date">) as a LOCAL date, so the weekday
+// and calendar day don't shift under UTC parsing in negative-offset timezones.
+function parseLocalDate(s?: string): Date | null {
+  if (!s) return null;
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function pad(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+// First occurrence of `day` on or after `after`.
+function firstDateForDay(day: DayOfWeek, after: Date): Date {
   const dayMap: Record<DayOfWeek, number> = {
     Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5,
   };
-  const target = dayMap[day];
-  const current = after.getDay();
-  const diff = (target - current + 7) % 7;
+  const diff = (dayMap[day] - after.getDay() + 7) % 7;
   const date = new Date(after);
-  date.setDate(date.getDate() + (diff === 0 ? 7 : diff));
+  date.setDate(date.getDate() + diff);
   return date;
 }
 
@@ -31,8 +43,14 @@ export function exportScheduleIcs(
   termEnd?: string
 ): void {
   const studentMap = new Map(students.map((s) => [s.osisNumber, s]));
-  const startDate = termStart ? new Date(termStart) : new Date();
-  const endDate = termEnd ? new Date(termEnd) : null;
+  const startDate = parseLocalDate(termStart) ?? new Date();
+  const endDate = parseLocalDate(termEnd);
+
+  // Floating UNTIL (no "Z") through the end of the last day, matching the floating
+  // DTSTART. Mixing a UTC UNTIL with a floating DTSTART is invalid per RFC 5545.
+  const until = endDate
+    ? `${endDate.getFullYear()}${pad(endDate.getMonth() + 1)}${pad(endDate.getDate())}T235959`
+    : null;
 
   const events: EventAttributes[] = [];
 
@@ -44,21 +62,19 @@ export function exportScheduleIcs(
       })
       .join(', ');
 
-    const eventDate = getNextDateForDay(session.day, startDate);
+    const eventDate = firstDateForDay(session.day, startDate);
     const startHour = Math.floor(session.startTime / 60);
     const startMinute = session.startTime % 60;
     const durationMinutes = session.endTime - session.startTime;
 
-    // Build recurrence rule
     const rruleParts = [`FREQ=WEEKLY;BYDAY=${dayToIcsDay(session.day)}`];
-    if (endDate) {
-      const until = endDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-      rruleParts.push(`UNTIL=${until}`);
-    }
+    if (until) rruleParts.push(`UNTIL=${until}`);
 
     events.push({
       title: `OT: ${names}`,
       description: `Students: ${names}`,
+      // Floating local wall-clock time: the session stays at e.g. 9:00 AM every
+      // week regardless of daylight-saving changes during the school year.
       start: [
         eventDate.getFullYear(),
         eventDate.getMonth() + 1,
@@ -66,18 +82,20 @@ export function exportScheduleIcs(
         startHour,
         startMinute,
       ],
+      startInputType: 'local',
+      startOutputType: 'local',
       duration: { minutes: durationMinutes },
       recurrenceRule: rruleParts.join(';'),
     });
   }
 
   createEvents(events, (error, value) => {
-    if (error) {
+    if (error || !value) {
       console.error('ICS generation error:', error);
       return;
     }
 
-    const blob = new Blob([value], { type: 'text/calendar' });
+    const blob = new Blob([value], { type: 'text/calendar;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
