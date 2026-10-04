@@ -1,4 +1,11 @@
-import type { DayOfWeek, ScheduledSession, Student } from '@/types';
+import { zipSync, strToU8 } from 'fflate';
+import type {
+  AppConfig,
+  DayOfWeek,
+  ProviderSchedule,
+  ScheduledSession,
+  Student,
+} from '@/types';
 
 // Hand-rolled RFC 5545 generator. We don't use the `ics` library here because it
 // can't emit a VTIMEZONE block or pin events to a named timezone, and it hard-codes
@@ -90,11 +97,10 @@ function localStamp(d: Date, hour: number, minute: number): string {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(hour)}${pad(minute)}00`;
 }
 
-function utcStampNow(): string {
-  const d = new Date();
+function utcStampNow(now: Date): string {
   return (
-    `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}` +
-    `T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`
+    `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
+    `T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`
   );
 }
 
@@ -119,14 +125,23 @@ const VTIMEZONE = [
   'END:VTIMEZONE',
 ];
 
-export function buildIcs(
-  sessions: ScheduledSession[],
-  students: Student[],
+// A single weekly recurring entry, timezone- and recurrence-agnostic.
+interface IcsEvent {
+  day: DayOfWeek;
+  startTime: number; // minutes from midnight
+  endTime: number; // minutes from midnight
+  summary: string;
+  description: string;
+}
+
+// Build a complete VCALENDAR string from generic weekly events. Shared by the
+// provider's own schedule and every other provider's schedule.
+export function buildCalendar(
+  events: IcsEvent[],
   termStart?: string,
   termEnd?: string,
   now: Date = new Date()
 ): string {
-  const studentMap = new Map(students.map((s) => [s.osisNumber, s]));
   const today = atMidnight(now);
 
   // Anchor the recurrence to this coming Monday by default. Only honor a configured
@@ -145,7 +160,7 @@ export function buildIcs(
   // events and stops the series after it.
   const until =
     `${endDate.getFullYear()}${pad(endDate.getMonth() + 1)}${pad(endDate.getDate())}T235959Z`;
-  const dtstamp = utcStampNow();
+  const dtstamp = utcStampNow(now);
 
   const lines: string[] = [
     'BEGIN:VCALENDAR',
@@ -155,21 +170,14 @@ export function buildIcs(
     ...VTIMEZONE,
   ];
 
-  sessions.forEach((session, i) => {
-    const names = session.studentIds
-      .map((id) => {
-        const s = studentMap.get(id);
-        return s ? `${s.firstName} ${s.lastName.charAt(0)}.` : id;
-      })
-      .join(', ');
+  events.forEach((ev, i) => {
+    const eventDate = firstDateForDay(ev.day, anchor);
+    const startHour = Math.floor(ev.startTime / 60);
+    const startMinute = ev.startTime % 60;
+    const endHour = Math.floor(ev.endTime / 60);
+    const endMinute = ev.endTime % 60;
 
-    const eventDate = firstDateForDay(session.day, anchor);
-    const startHour = Math.floor(session.startTime / 60);
-    const startMinute = session.startTime % 60;
-    const endHour = Math.floor(session.endTime / 60);
-    const endMinute = session.endTime % 60;
-
-    const uid = `${dtstamp}-${i}-${session.id || Math.random().toString(36).slice(2)}@ot-scheduler`;
+    const uid = `${dtstamp}-${i}-${Math.random().toString(36).slice(2)}@ot-scheduler`;
 
     lines.push(
       'BEGIN:VEVENT',
@@ -177,15 +185,93 @@ export function buildIcs(
       `DTSTAMP:${dtstamp}`,
       `DTSTART;TZID=${TZID}:${localStamp(eventDate, startHour, startMinute)}`,
       `DTEND;TZID=${TZID}:${localStamp(eventDate, endHour, endMinute)}`,
-      `RRULE:FREQ=WEEKLY;BYDAY=${dayToIcsDay(session.day)};UNTIL=${until}`,
-      fold(`SUMMARY:OT: ${escapeText(names)}`),
-      fold(`DESCRIPTION:Students: ${escapeText(names)}`),
+      `RRULE:FREQ=WEEKLY;BYDAY=${dayToIcsDay(ev.day)};UNTIL=${until}`,
+      fold(`SUMMARY:${escapeText(ev.summary)}`),
+      fold(`DESCRIPTION:${escapeText(ev.description)}`),
       'END:VEVENT'
     );
   });
 
   lines.push('END:VCALENDAR');
   return lines.join('\r\n') + '\r\n';
+}
+
+function studentNames(session: ScheduledSession, studentMap: Map<string, Student>): string {
+  return session.studentIds
+    .map((id) => {
+      const s = studentMap.get(id);
+      return s ? `${s.firstName} ${s.lastName.charAt(0)}.` : id;
+    })
+    .join(', ');
+}
+
+// The provider's own schedule (the one being built in the app).
+export function buildIcs(
+  sessions: ScheduledSession[],
+  students: Student[],
+  termStart?: string,
+  termEnd?: string,
+  now: Date = new Date()
+): string {
+  const studentMap = new Map(students.map((s) => [s.osisNumber, s]));
+  const events: IcsEvent[] = sessions.map((session) => {
+    const names = studentNames(session, studentMap);
+    return {
+      day: session.day,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      summary: `OT: ${names}`,
+      description: `Students: ${names}`,
+    };
+  });
+  return buildCalendar(events, termStart, termEnd, now);
+}
+
+// Another provider's schedule, parsed from the master workbook. Student names are
+// raw strings (no OSIS to resolve). Returns null when the provider has no usable
+// sessions, so empty calendars are skipped in the zip.
+export function buildProviderIcs(
+  schedule: ProviderSchedule,
+  termStart?: string,
+  termEnd?: string,
+  now: Date = new Date()
+): string | null {
+  const events: IcsEvent[] = [];
+  for (const ext of schedule.sessions) {
+    const names = ext.studentNames.filter((n) => n.trim().length > 0).join(', ');
+    const label = names || ext.rawText.trim();
+    if (!label) continue;
+    events.push({
+      day: ext.day,
+      startTime: ext.startTime,
+      endTime: ext.endTime,
+      summary: label,
+      description: `${schedule.providerName}${names ? `\n${names}` : ''}`,
+    });
+  }
+  if (events.length === 0) return null;
+  return buildCalendar(events, termStart, termEnd, now);
+}
+
+// Turn a provider/sheet name into a safe, unique .ics filename within the zip.
+function uniqueFileName(base: string, used: Set<string>): string {
+  let name = base.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'schedule';
+  let candidate = `${name}.ics`;
+  let n = 2;
+  while (used.has(candidate.toLowerCase())) {
+    candidate = `${name}-${n++}.ics`;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function exportScheduleIcs(
@@ -195,11 +281,35 @@ export function exportScheduleIcs(
   termEnd?: string
 ): void {
   const ics = buildIcs(sessions, students, termStart, termEnd);
-  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'ot-schedule.ics';
-  a.click();
-  URL.revokeObjectURL(url);
+  triggerDownload(new Blob([ics], { type: 'text/calendar;charset=utf-8' }), 'ot-schedule.ics');
+}
+
+// Export a zip with one .ics per calendar: the provider's own schedule first, then
+// one for each other provider found in the master workbook.
+export function exportAllSchedulesZip(
+  sessions: ScheduledSession[],
+  students: Student[],
+  providerSchedules: ProviderSchedule[],
+  amandaSheetName: string | null,
+  config: AppConfig
+): void {
+  const files: Record<string, Uint8Array> = {};
+  const used = new Set<string>();
+
+  // The user's own schedule.
+  const ownIcs = buildIcs(sessions, students, config.termStartDate, config.termEndDate);
+  const ownName = uniqueFileName(config.providerName || 'My Schedule', used);
+  files[ownName] = strToU8(ownIcs);
+
+  // Every other provider from the master workbook.
+  for (const ps of providerSchedules) {
+    if (amandaSheetName && ps.sheetName === amandaSheetName) continue;
+    const ics = buildProviderIcs(ps, config.termStartDate, config.termEndDate);
+    if (!ics) continue;
+    files[uniqueFileName(ps.providerName || ps.sheetName, used)] = strToU8(ics);
+  }
+
+  const zipped = zipSync(files, { level: 6 });
+  // Copy into a fresh ArrayBuffer-backed view so Blob gets a clean buffer.
+  triggerDownload(new Blob([zipped.slice()], { type: 'application/zip' }), 'schedules.zip');
 }

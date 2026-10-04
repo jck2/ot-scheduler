@@ -1,16 +1,22 @@
 import { useAppStore } from '@/store/useAppStore';
 import { exportScheduleXlsx } from '@/export/xlsxExporter';
-import { exportScheduleIcs } from '@/export/icsExporter';
+import { exportAllSchedulesZip } from '@/export/icsExporter';
 
 export function ExportDialog() {
-  const { sessions, students, config, setStep } = useAppStore();
+  const { sessions, students, config, providerSchedules, amandaSheetName, setStep } =
+    useAppStore();
+
+  // Count the other providers that will get their own .ics in the zip.
+  const otherProviderCount = providerSchedules.filter(
+    (ps) => !amandaSheetName || ps.sheetName !== amandaSheetName
+  ).length;
 
   function handleExportXlsx() {
     exportScheduleXlsx(sessions, students, config.activeDays);
   }
 
-  function handleExportIcs() {
-    exportScheduleIcs(sessions, students, config.termStartDate, config.termEndDate);
+  function handleExportCalendars() {
+    exportAllSchedulesZip(sessions, students, providerSchedules, amandaSheetName, config);
   }
 
   const totalRequired = students.reduce(
@@ -60,12 +66,16 @@ export function ExportDialog() {
         </button>
 
         <button
-          onClick={handleExportIcs}
+          onClick={handleExportCalendars}
           className="w-full p-4 border-2 border-gray-200 rounded-xl text-left hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
         >
-          <h3 className="font-semibold text-gray-800">Download as Calendar (.ics)</h3>
+          <h3 className="font-semibold text-gray-800">Download Calendars (.zip)</h3>
           <p className="text-sm text-gray-500 mt-1">
-            Recurring weekly events for Google Calendar, Outlook, etc.
+            One .ics per calendar — your schedule
+            {otherProviderCount > 0
+              ? ` plus ${otherProviderCount} other provider${otherProviderCount === 1 ? '' : 's'}`
+              : ''}
+            . Recurring weekly events for Google Calendar, Outlook, etc.
           </p>
         </button>
       </div>

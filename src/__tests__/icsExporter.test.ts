@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildIcs } from '@/export/icsExporter';
-import type { ScheduledSession, Student } from '@/types';
+import { buildIcs, buildProviderIcs } from '@/export/icsExporter';
+import type { ProviderSchedule, ScheduledSession, Student } from '@/types';
 
 function student(first: string, last: string, osis: string): Student {
   return {
@@ -99,5 +99,29 @@ describe('buildIcs', () => {
     const uids = [...ics.matchAll(/^UID:(.+)$/gm)].map((m) => m[1]);
     expect(uids).toHaveLength(2);
     expect(new Set(uids).size).toBe(2);
+  });
+});
+
+describe('buildProviderIcs', () => {
+  function provider(name: string, sessions: ProviderSchedule['sessions']): ProviderSchedule {
+    return { providerName: name, sheetName: name, sessions };
+  }
+
+  it('builds a calendar from an external provider schedule', () => {
+    const ps = provider('Speech - Jane Doe', [
+      { day: 'Monday', startTime: 540, endTime: 570, studentNames: ['Ana B.', 'Ben C.'], rawText: 'Ana B., Ben C.' },
+    ]);
+    const ics = buildProviderIcs(ps, undefined, undefined, NOW)!;
+    expect(ics).toContain('BEGIN:VEVENT');
+    expect(ics).toContain('SUMMARY:Ana B.\\, Ben C.');
+    expect(ics).toContain('DTSTART;TZID=America/New_York:20261012T090000');
+    expect(ics).toContain('DESCRIPTION:Speech - Jane Doe');
+  });
+
+  it('returns null when the provider has no usable sessions', () => {
+    const ps = provider('Empty', [
+      { day: 'Monday', startTime: 540, endTime: 570, studentNames: [], rawText: '' },
+    ]);
+    expect(buildProviderIcs(ps, undefined, undefined, NOW)).toBeNull();
   });
 });

@@ -206,6 +206,19 @@ definitions, group references, skip-cells like "LUNCH"/"PREP"). Sheets named
   [icsExporter.ts](src/export/icsExporter.ts)): the schedule grid / calendar shows just
   first name + last initial and the day/time. No group/type annotation, no mandate, no
   student-summary sheet (xlsx keeps class-based cell coloring only).
+- **ICS export is hand-rolled, not the `ics` library** ([icsExporter.ts](src/export/icsExporter.ts)).
+  The `ics` lib hard-codes `METHOD:PUBLISH` and can't emit a `VTIMEZONE` / named
+  timezone — both made Google Calendar's import silently add nothing. The generator
+  now pins every event to `America/New_York` (real `VTIMEZONE` + `TZID` DTSTART/DTEND,
+  UTC `UNTIL`), uses `DTEND` (not `DURATION`), CRLF, folded lines, escaped commas, a
+  unique UID — and anchors the weekly recurrence to the **Monday on/after export**
+  (ignoring any stale past term start/end from `config`). `buildCalendar` is the shared
+  core; `buildIcs` (own schedule) and `buildProviderIcs` (an external provider's parsed
+  sheet) feed it. `exportAllSchedulesZip` bundles one `.ics` per calendar — the user's
+  own first, then every other provider in `providerSchedules` (empty ones skipped) —
+  into `schedules.zip` via **fflate** (`zipSync`). Validate changes by parsing the
+  output with `node-ical` (installed `--no-save` for a quick check); don't trust that
+  it imports just because it looks right. The `ics` package is still a dep but unused.
 
 ## Deploy
 
