@@ -1,5 +1,6 @@
 import { zipSync, strToU8 } from 'fflate';
 import { buildNameIndex, matchExternalName } from '@/parsing/overlayMatcher';
+import { isExcludedProvider } from '@/utils/constants';
 import type {
   AppConfig,
   DayOfWeek,
@@ -407,6 +408,7 @@ export function exportAllSchedulesZip(
   // Every other provider from the master workbook.
   for (const ps of providerSchedules) {
     if (amandaSheetName && ps.sheetName === amandaSheetName) continue;
+    if (isExcludedProvider(ps.sheetName, ps.providerName)) continue;
     const ics = buildProviderIcs(ps, students, config.termStartDate, config.termEndDate);
     if (!ics) continue;
     const name = uniqueFileName(ps.providerName || ps.sheetName, used);

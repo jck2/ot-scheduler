@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { minutesToTime, slotsOverlap } from '@/utils/timeUtils';
 import { dayIndex } from '@/utils/timeUtils';
-import { bandForStartTime } from '@/utils/constants';
+import { bandForStartTime, isExcludedProvider } from '@/utils/constants';
 import type { ExternalSession } from '@/types';
 import { buildNameIndex, matchExternalName } from '@/parsing/overlayMatcher';
 import { TimeSlotCell, type ActiveDragData } from './TimeSlotCell';
@@ -87,7 +87,10 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
     // a space or end of string — so "OT- Christina" matches but "Ot-Mann" does not.
     const isOtSheet = (name: string) => /^OT[\s-]/i.test(name);
     const otherProviders = providerSchedules.filter(
-      (ps) => ps.sheetName !== amandaSheetName && !isOtSheet(ps.sheetName)
+      (ps) =>
+        ps.sheetName !== amandaSheetName &&
+        !isOtSheet(ps.sheetName) &&
+        !isExcludedProvider(ps.sheetName, ps.providerName)
     );
 
     const findMatchedStudentIds = (rawName: string) => matchExternalName(rawName, nameIndex);

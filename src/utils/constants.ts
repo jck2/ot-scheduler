@@ -48,6 +48,27 @@ export function bandForStartTime(startTime: number): TimeBand | undefined {
   return RESTRICTED_TIME_BANDS.find((b) => startTime >= b.start && startTime < b.end);
 }
 
+/**
+ * Providers to drop from the other-providers overlay, cross-provider conflict
+ * detection, and the per-provider calendar export.
+ *
+ * External names are matched to the roster by first name and initials. Most
+ * providers reference Amanda's students by first name, but some (e.g. Counseling)
+ * list ONLY their own students by initials, which coincidentally collide with roster
+ * initials ("MM" ≠ Magritte Mittnacht, "SC" ≠ Sarah Charles) — producing phantom
+ * overlap. We have no roster for those providers to disambiguate, and Amanda
+ * confirmed they have no real overlap with her caseload, so skip them wholesale.
+ * (Other initials-only sheets like Ayana Jenkins / Rosa Perez ARE real overlap and
+ * stay.) Matched case-insensitively against the sheet name and provider name.
+ */
+export const EXCLUDED_PROVIDER_PATTERNS: RegExp[] = [/grosser/i];
+
+export function isExcludedProvider(...names: (string | null | undefined)[]): boolean {
+  return names.some(
+    (n) => !!n && EXCLUDED_PROVIDER_PATTERNS.some((re) => re.test(n))
+  );
+}
+
 export const SKIP_CELLS = [
   'lunch', 'prep', 'dismissal', 'not at compass', 'break',
   'planning', 'meeting', 'recess', 'arrival', 'duty',

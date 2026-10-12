@@ -1,6 +1,7 @@
 import { useAppStore } from '@/store/useAppStore';
 import { exportScheduleXlsx } from '@/export/xlsxExporter';
 import { exportAllSchedulesZip } from '@/export/icsExporter';
+import { isExcludedProvider } from '@/utils/constants';
 
 export function ExportDialog() {
   const { sessions, students, config, providerSchedules, amandaSheetName, setStep } =
@@ -8,7 +9,9 @@ export function ExportDialog() {
 
   // Count the other providers that will get their own .ics in the zip.
   const otherProviderCount = providerSchedules.filter(
-    (ps) => !amandaSheetName || ps.sheetName !== amandaSheetName
+    (ps) =>
+      (!amandaSheetName || ps.sheetName !== amandaSheetName) &&
+      !isExcludedProvider(ps.sheetName, ps.providerName)
   ).length;
 
   function handleExportXlsx() {

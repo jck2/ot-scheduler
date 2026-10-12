@@ -1,5 +1,6 @@
 import type { Conflict, ProviderSchedule, Student } from '@/types';
 import { studentDisplayName } from '@/parsing/rosterParser';
+import { isExcludedProvider } from '@/utils/constants';
 
 /**
  * Returns true if a sheet name represents an OT provider.
@@ -53,6 +54,9 @@ export function detectCrossProviderConflicts(
     // false matches when "OT" appears inside a hyphenated last name.
     if (schedule.sheetName === mySheetName) continue;
     if (isOtSheet(schedule.sheetName)) continue;
+    // Drop providers whose initials-only sheets produce phantom overlap (see
+    // isExcludedProvider). No roster to disambiguate; confirmed no real overlap.
+    if (isExcludedProvider(schedule.sheetName, schedule.providerName)) continue;
 
     for (const session of schedule.sessions) {
       for (const name of session.studentNames) {
