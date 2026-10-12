@@ -1,6 +1,7 @@
-import type { Conflict, DayOfWeek, ScheduledSession, Student, AppConfig } from '@/types';
+import type { Conflict, DayOfWeek, ScheduledSession, Student, AppConfig, StudentRules } from '@/types';
 import { PENALTY } from '@/utils/constants';
 import { slotsOverlap } from '@/utils/timeUtils';
+import { sessionViolatesRules } from './availability';
 
 export interface ConstraintResult {
   satisfied: boolean;
@@ -38,6 +39,24 @@ export function checkNoDoubleBooking(
     if (slotsOverlap(startTime, endTime, s.startTime, s.endTime)) {
       return { satisfied: false, penalty: Infinity, reason: `Student double-booked at ${startTime}` };
     }
+  }
+  return { satisfied: true, penalty: 0 };
+}
+
+/**
+ * Hard constraint: the student's custom availability rules must not forbid this
+ * slot. Custom rules are always treated as hard errors, so a forbidden cell is
+ * never chosen by the scheduler.
+ */
+export function checkStudentAvailability(
+  day: DayOfWeek,
+  startTime: number,
+  endTime: number,
+  rules: StudentRules | undefined,
+  config: AppConfig
+): ConstraintResult {
+  if (sessionViolatesRules(rules, { day, startTime, endTime }, config.slotDuration)) {
+    return { satisfied: false, penalty: Infinity, reason: `Custom rule forbids ${day} ${startTime}` };
   }
   return { satisfied: true, penalty: 0 };
 }

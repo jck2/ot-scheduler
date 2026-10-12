@@ -2,11 +2,22 @@ import { useMemo, useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { useAppStore } from '@/store/useAppStore';
 import { getStudentSessionSummary } from '@/scheduling/validator';
+import { rulesActive } from '@/scheduling/availability';
 import { MandateProgress } from './MandateProgress';
+import { StudentRulesEditor } from '@/components/rules/StudentRulesEditor';
 import type { Student } from '@/types';
 
-function DraggableStudentRow({ student }: { student: Student }) {
+function DraggableStudentRow({
+  student,
+  onEditRules,
+}: {
+  student: Student;
+  onEditRules: (s: Student) => void;
+}) {
   const sessions = useAppStore((s) => s.sessions);
+  const hasRules = useAppStore((s) =>
+    rulesActive(s.customRules.find((r) => r.studentId === student.osisNumber))
+  );
   const summary = getStudentSessionSummary(student, sessions);
   const hasUnfulfilled = summary.totalScheduled < summary.totalRequired;
 
@@ -38,7 +49,25 @@ function DraggableStudentRow({ student }: { student: Student }) {
           {student.mandateRaw}
         </p>
       </div>
-      <MandateProgress student={student} />
+      <div className="flex items-center gap-1.5">
+        <MandateProgress student={student} />
+        <button
+          type="button"
+          title={hasRules ? 'Edit availability rules (set)' : 'Add availability rules'}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditRules(student);
+          }}
+          className={`shrink-0 w-5 h-5 flex items-center justify-center rounded text-[11px] leading-none ${
+            hasRules
+              ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
+              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          🕒
+        </button>
+      </div>
     </div>
   );
 }
@@ -46,6 +75,7 @@ function DraggableStudentRow({ student }: { student: Student }) {
 export function StudentList() {
   const students = useAppStore((s) => s.students);
   const [filter, setFilter] = useState('');
+  const [editing, setEditing] = useState<Student | null>(null);
 
   const filtered = useMemo(() => {
     if (!filter) return students;
@@ -103,12 +133,15 @@ export function StudentList() {
             </h4>
             <div className="space-y-1">
               {group.students.map((s) => (
-                <DraggableStudentRow key={s.osisNumber} student={s} />
+                <DraggableStudentRow key={s.osisNumber} student={s} onEditRules={setEditing} />
               ))}
             </div>
           </div>
         ))}
       </div>
+      {editing && (
+        <StudentRulesEditor student={editing} onClose={() => setEditing(null)} />
+      )}
     </div>
   );
 }

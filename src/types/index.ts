@@ -30,6 +30,25 @@ export interface ScheduledSession {
 
 export type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday';
 
+/** day → painted 30-minute cell start times (minutes from midnight), sorted. */
+export type CellSet = Partial<Record<DayOfWeek, number[]>>;
+
+/**
+ * Custom per-student availability rules. Set by the provider, persisted on-device
+ * separately from the imported sheet data (keyed by OSIS so they survive a sheet
+ * re-import). Two combinable layers:
+ *   - allow: if non-empty, the student may be seen ONLY in these cells.
+ *   - block: the student is never seen in these cells.
+ * Always treated as hard `error` constraints — see scheduling/availability.ts.
+ */
+export interface StudentRules {
+  studentId: string; // OSIS number
+  allow?: CellSet;
+  block?: CellSet;
+  note?: string;
+  enabled: boolean;
+}
+
 export interface ProviderSchedule {
   providerName: string;
   sheetName: string;
@@ -83,7 +102,7 @@ export interface AppConfig {
 }
 
 export interface ValidationError {
-  type: 'unmet_mandate' | 'double_booking' | 'cross_provider_conflict' | 'group_size' | 'wrong_class_mix' | 'time_overflow' | 'class_unavailable';
+  type: 'unmet_mandate' | 'double_booking' | 'cross_provider_conflict' | 'group_size' | 'wrong_class_mix' | 'time_overflow' | 'class_unavailable' | 'custom_availability';
   severity: 'error' | 'warning';
   // Card attribution: an issue rings a card (session, student) when the session is
   // in scope AND the student is a subject. studentId/studentIds name the subjects

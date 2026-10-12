@@ -57,10 +57,10 @@ export function SettingsPanel() {
   }
 
   function handleRegenerate() {
-    const currentConfig = useAppStore.getState().config;
-    const sessions = generateSchedule(students, conflicts, currentConfig);
+    const { config: currentConfig, customRules } = useAppStore.getState();
+    const sessions = generateSchedule(students, conflicts, currentConfig, customRules);
     setSessions(sessions);
-    const errors = validateSchedule(sessions, students, conflicts, currentConfig);
+    const errors = validateSchedule(sessions, students, conflicts, currentConfig, customRules);
     setValidationErrors(errors);
   }
 

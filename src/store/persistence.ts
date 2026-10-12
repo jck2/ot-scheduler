@@ -34,12 +34,18 @@ export async function clearState(): Promise<void> {
   await db.clear(STORE_NAME);
 }
 
-// Debounced save utility
-let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+// Debounced save utility — one timer PER key, so saving one key (e.g. custom
+// rules) never cancels a pending save of another (e.g. app-state).
+const saveTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function debouncedSave(key: string, value: unknown, delay = 2000): void {
-  if (saveTimeout) clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(() => {
-    saveState(key, value).catch(console.error);
-  }, delay);
+  const existing = saveTimeouts.get(key);
+  if (existing) clearTimeout(existing);
+  saveTimeouts.set(
+    key,
+    setTimeout(() => {
+      saveTimeouts.delete(key);
+      saveState(key, value).catch(console.error);
+    }, delay)
+  );
 }

@@ -14,6 +14,7 @@ export function ModeSelector() {
     selectedProvider,
     conflicts,
     config,
+    customRules,
     providerSchedules,
     initialMappings,
     amandaSheetName,
@@ -48,9 +49,9 @@ export function ModeSelector() {
   }
 
   function handleGenerateFresh() {
-    const sessions = generateSchedule(students, conflicts, config);
+    const sessions = generateSchedule(students, conflicts, config, customRules);
     setSessions(sessions);
-    const errors = validateSchedule(sessions, students, conflicts, config);
+    const errors = validateSchedule(sessions, students, conflicts, config, customRules);
     setValidationErrors(errors);
     setStep('schedule');
   }
@@ -160,7 +161,7 @@ export function ModeSelector() {
       .filter((s): s is NonNullable<typeof s> => s !== null);
 
     setSessions(importedSessions);
-    const errors = validateSchedule(importedSessions, students, conflicts, config);
+    const errors = validateSchedule(importedSessions, students, conflicts, config, customRules);
     setValidationErrors(errors);
     setStep('schedule');
   }

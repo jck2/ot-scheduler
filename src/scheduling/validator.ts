@@ -1,6 +1,7 @@
-import type { AppConfig, Conflict, DayOfWeek, ScheduledSession, Student, ValidationError } from '@/types';
+import type { AppConfig, Conflict, DayOfWeek, ScheduledSession, Student, StudentRules, ValidationError } from '@/types';
 import { minutesToTime, slotsOverlap } from '@/utils/timeUtils';
 import { bandForStartTime } from '@/utils/constants';
+import { rulesActive, rulesByStudent, sessionViolatesRules } from './availability';
 
 /** Largest group size any of a student's mandates permits (0 = individual only). */
 export function studentMaxGroupSize(student: Student): number {
@@ -49,10 +50,12 @@ export function validateSchedule(
   sessions: ScheduledSession[],
   students: Student[],
   conflicts: Conflict[],
-  config: AppConfig
+  config: AppConfig,
+  rules: StudentRules[] = []
 ): ValidationError[] {
   const errors: ValidationError[] = [];
   const studentMap = new Map(students.map((s) => [s.osisNumber, s]));
+  const rulesMap = rulesByStudent(rules);
 
   const sessionsByStudent = new Map<string, ScheduledSession[]>();
   for (const s of sessions) {
@@ -77,6 +80,28 @@ export function validateSchedule(
     const name = `${student.firstName} ${student.lastName}`.trim();
 
     const mySessions = sessionsByStudent.get(student.osisNumber) ?? [];
+
+    // Custom availability rules → one error per session that lands in a forbidden
+    // cell. Scoped to the exact session + student so it rings that card.
+    const studentRules = rulesMap.get(student.osisNumber);
+    if (rulesActive(studentRules)) {
+      for (const s of mySessions) {
+        if (sessionViolatesRules(studentRules, s, config.slotDuration)) {
+          const hasAllow =
+            !!studentRules!.allow &&
+            Object.values(studentRules!.allow).some((v) => v && v.length > 0);
+          errors.push({
+            type: 'custom_availability',
+            severity: 'error',
+            studentId: student.osisNumber,
+            sessionId: s.id,
+            message: hasAllow
+              ? `${name} can only be seen at set times — ${s.day} ${minutesToTime(s.startTime)} isn't one of them.`
+              : `${name} is blocked at ${s.day} ${minutesToTime(s.startTime)}.`,
+          });
+        }
+      }
+    }
 
     if (summary.totalScheduled < summary.totalRequired) {
       // Too few sessions — no specific cell to blame; shows in the list/roster only.

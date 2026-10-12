@@ -1,4 +1,4 @@
-import type { AppConfig, Conflict, ScheduledSession, Student, TimeSlot } from '@/types';
+import type { AppConfig, Conflict, ScheduledSession, Student, StudentRules, TimeSlot } from '@/types';
 import { decomposeMandates, type SessionRequest } from '@/parsing/mandateParser';
 import { generateTimeSlots } from '@/utils/timeUtils';
 import {
@@ -7,12 +7,14 @@ import {
   checkNoDoubleBooking,
   checkProviderSlotFree,
   checkSameClassGroup,
+  checkStudentAvailability,
   checkWednesdayEnd,
   scoreExtendedHours,
   scoreLunchPenalty,
   scoreSameDayDouble,
   scoreTimePenalty,
 } from './constraints';
+import { rulesByStudent } from './availability';
 
 let nextId = 1;
 function genId(): string {
@@ -22,10 +24,12 @@ function genId(): string {
 export function generateSchedule(
   students: Student[],
   conflicts: Conflict[],
-  config: AppConfig
+  config: AppConfig,
+  rules: StudentRules[] = []
 ): ScheduledSession[] {
   nextId = 1;
   const studentMap = new Map(students.map((s) => [s.osisNumber, s]));
+  const rulesMap = rulesByStudent(rules);
 
   // 1. Decompose all mandates into individual session requests
   const allRequests: SessionRequest[] = [];
@@ -86,7 +90,8 @@ export function generateSchedule(
       conflicts,
       config,
       studentMap,
-      slotPhases
+      slotPhases,
+      rulesMap
     );
     if (scheduled) {
       sessions.push(scheduled);
@@ -101,7 +106,8 @@ export function generateSchedule(
       conflicts,
       config,
       studentMap,
-      slotPhases
+      slotPhases,
+      rulesMap
     );
     if (scheduled) {
       sessions.push(scheduled);
@@ -229,7 +235,8 @@ function scheduleGroupedSession(
   conflicts: Conflict[],
   config: AppConfig,
   studentMap: Map<string, Student>,
-  slotPhases: TimeSlot[][]
+  slotPhases: TimeSlot[][],
+  rulesMap: Map<string, StudentRules>
 ): ScheduledSession | null {
   const studentIds = group.map((r) => r.studentId);
   let bestSlot: TimeSlot | null = null;
@@ -258,6 +265,9 @@ function scheduleGroupedSession(
 
         const cp = checkNoCrossProviderConflict(sid, slot.day, slot.startTime, slot.endTime, conflicts);
         if (!cp.satisfied) { allClear = false; break; }
+
+        const avail = checkStudentAvailability(slot.day, slot.startTime, slot.endTime, rulesMap.get(sid), config);
+        if (!avail.satisfied) { allClear = false; break; }
 
         penalty += scoreSameDayDouble(sid, slot.day, existing);
       }
@@ -303,7 +313,8 @@ function scheduleIndividualSession(
   conflicts: Conflict[],
   config: AppConfig,
   _studentMap: Map<string, Student>,
-  slotPhases: TimeSlot[][]
+  slotPhases: TimeSlot[][],
+  rulesMap: Map<string, StudentRules>
 ): ScheduledSession | null {
   let bestSlot: TimeSlot | null = null;
   let bestPenalty = Infinity;
@@ -336,6 +347,15 @@ function scheduleIndividualSession(
         conflicts
       );
       if (!cp.satisfied) continue;
+
+      const avail = checkStudentAvailability(
+        slot.day,
+        slot.startTime,
+        slot.endTime,
+        rulesMap.get(request.studentId),
+        config
+      );
+      if (!avail.satisfied) continue;
 
       let penalty = 0;
       penalty += scoreLunchPenalty(slot.startTime, slot.endTime, config);

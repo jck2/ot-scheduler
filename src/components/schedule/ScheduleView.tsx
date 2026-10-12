@@ -40,6 +40,7 @@ export function ScheduleView() {
   const students = useAppStore((s) => s.students);
   const conflicts = useAppStore((s) => s.conflicts);
   const config = useAppStore((s) => s.config);
+  const customRules = useAppStore((s) => s.customRules);
   const validationErrors = useAppStore((s) => s.validationErrors);
   const setValidationErrors = useAppStore((s) => s.setValidationErrors);
   const providerView = useAppStore((s) => s.providerView);
@@ -98,9 +99,9 @@ export function ScheduleView() {
 
   const revalidate = useCallback(() => {
     const updated = useAppStore.getState().sessions;
-    const errors = validateSchedule(updated, students, filteredConflicts, config);
+    const errors = validateSchedule(updated, students, filteredConflicts, config, customRules);
     setValidationErrors(errors);
-  }, [students, filteredConflicts, config, setValidationErrors]);
+  }, [students, filteredConflicts, config, customRules, setValidationErrors]);
 
   // validationErrors isn't persisted, so recompute whenever the schedule view is
   // shown or its inputs change — otherwise the counts/rings are empty after a reload

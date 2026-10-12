@@ -2,14 +2,16 @@ import { create } from 'zustand';
 import type {
   AppConfig,
   AppStep,
+  CellSet,
   Conflict,
   InitialMapping,
   ProviderSchedule,
   ScheduledSession,
   Student,
+  StudentRules,
   ValidationError,
 } from '@/types';
-import { DEFAULT_CONFIG } from '@/utils/constants';
+import { ALL_DAYS, DEFAULT_CONFIG } from '@/utils/constants';
 import { parseMandate } from '@/parsing/mandateParser';
 import { debouncedSave, loadState } from './persistence';
 
@@ -64,6 +66,12 @@ interface AppState {
   // Student exclusion from overlay
   excludedStudentIds: string[];
   toggleExcludedStudent: (studentId: string) => void;
+
+  // Custom per-student availability rules — persisted on a SEPARATE key from
+  // app-state so they survive a sheet re-import (re-attached by OSIS).
+  customRules: StudentRules[];
+  setStudentRules: (studentId: string, rules: Omit<StudentRules, 'studentId'>) => void;
+  removeStudentRules: (studentId: string) => void;
 
   // Config
   config: AppConfig;
@@ -205,6 +213,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     persistState(get());
   },
 
+  customRules: [],
+  setStudentRules: (studentId, rules) => {
+    const others = get().customRules.filter((r) => r.studentId !== studentId);
+    const next = [...others, { ...rules, studentId }];
+    set({ customRules: next });
+    debouncedSave('custom-rules', next);
+  },
+  removeStudentRules: (studentId) => {
+    const next = get().customRules.filter((r) => r.studentId !== studentId);
+    set({ customRules: next });
+    debouncedSave('custom-rules', next);
+  },
+
   config: { ...DEFAULT_CONFIG },
   updateConfig: (updates) => {
     const config = { ...get().config, ...updates };
@@ -233,6 +254,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           conflicts: saved.conflicts ?? [],
           providerView: saved.providerView ?? 'both',
         });
+      }
+      // Custom rules live on their own key so a sheet re-import never clears them.
+      const savedRules = await loadState<StudentRules[]>('custom-rules');
+      if (Array.isArray(savedRules)) {
+        set({ customRules: savedRules.map(sanitizeRules).filter((r) => r.studentId) });
       }
     } catch (e) {
       console.error('Failed to load from storage:', e);
@@ -317,6 +343,30 @@ function sanitizeSession(raw: Partial<ScheduledSession> | null | undefined): Sch
     studentIds,
     mandateIndices: s.mandateIndices && typeof s.mandateIndices === 'object' ? s.mandateIndices : {},
     locked: !!s.locked,
+  };
+}
+
+function sanitizeCellSet(raw: unknown): CellSet | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: CellSet = {};
+  for (const day of ALL_DAYS) {
+    const v = (raw as Record<string, unknown>)[day];
+    if (Array.isArray(v)) {
+      const starts = v.filter((n): n is number => typeof n === 'number');
+      if (starts.length) out[day] = [...starts].sort((a, b) => a - b);
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function sanitizeRules(raw: Partial<StudentRules> | null | undefined): StudentRules {
+  const r = raw ?? {};
+  return {
+    studentId: typeof r.studentId === 'string' ? r.studentId : '',
+    allow: sanitizeCellSet(r.allow),
+    block: sanitizeCellSet(r.block),
+    note: typeof r.note === 'string' ? r.note : undefined,
+    enabled: r.enabled !== false, // default enabled
   };
 }
 
