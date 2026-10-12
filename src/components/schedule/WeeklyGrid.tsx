@@ -5,6 +5,7 @@ import { dayIndex } from '@/utils/timeUtils';
 import { bandForStartTime, isExcludedProvider } from '@/utils/constants';
 import type { ExternalSession } from '@/types';
 import { buildNameIndex, matchExternalName } from '@/parsing/overlayMatcher';
+import { studentDisplayName } from '@/parsing/rosterParser';
 import { TimeSlotCell, type ActiveDragData } from './TimeSlotCell';
 
 interface WeeklyGridProps {
@@ -81,7 +82,7 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
   const nameIndex = useMemo(() => buildNameIndex(students), [students]);
 
   const externalSessionsByCell = useMemo(() => {
-    if (providerView === 'self') return new Map<string, { session: ExternalSession; providerName: string; colorIdx: number; matchedNames: { name: string; studentIds: string[] }[] }[]>();
+    if (providerView === 'self') return new Map<string, { session: ExternalSession; providerName: string; colorIdx: number; matchedNames: { name: string; label: string; studentIds: string[] }[] }[]>();
 
     // Matches "OT" or "OT-" only when preceded by a space/start and followed by
     // a space or end of string — so "OT- Christina" matches but "Ot-Mann" does not.
@@ -95,19 +96,31 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
 
     const findMatchedStudentIds = (rawName: string) => matchExternalName(rawName, nameIndex);
 
+    const studentById = new Map(students.map((s) => [s.osisNumber, s]));
+
     const excludedSet = new Set(excludedStudentIds);
 
-    const map = new Map<string, { session: ExternalSession; providerName: string; colorIdx: number; matchedNames: { name: string; studentIds: string[] }[] }[]>();
+    const map = new Map<string, { session: ExternalSession; providerName: string; colorIdx: number; matchedNames: { name: string; label: string; studentIds: string[] }[] }[]>();
     const { slotDuration, endTime: gridEnd } = config;
     const effectiveStart = timeRows.length > 0 ? timeRows[0] : config.startTime;
     otherProviders.forEach((ps, idx) => {
       const colorIdx = idx % PROVIDER_COLORS.length;
       for (const ext of ps.sessions) {
-        const matchedNames: { name: string; studentIds: string[] }[] = [];
+        const matchedNames: { name: string; label: string; studentIds: string[] }[] = [];
         for (const name of ext.studentNames) {
           const nonExcludedIds = findMatchedStudentIds(name).filter((id) => !excludedSet.has(id));
           if (nonExcludedIds.length > 0) {
-            matchedNames.push({ name, studentIds: nonExcludedIds });
+            // Label the overlaid session with the matched roster student's full
+            // name(s) instead of the provider's raw token ("MM" → "Magritte
+            // Mittnacht"). Join with " / " if a token matched more than one
+            // student; fall back to the raw token if a name can't be resolved.
+            const label =
+              nonExcludedIds
+                .map((id) => studentById.get(id))
+                .filter((s): s is NonNullable<typeof s> => !!s)
+                .map((s) => studentDisplayName(s))
+                .join(' / ') || name;
+            matchedNames.push({ name, label, studentIds: nonExcludedIds });
           }
         }
         if (matchedNames.length === 0) continue;

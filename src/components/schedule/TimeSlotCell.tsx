@@ -14,7 +14,7 @@ export interface ExternalSessionEntry {
   session: ExternalSession;
   providerName: string;
   colorIdx: number;
-  matchedNames: { name: string; studentIds: string[] }[];
+  matchedNames: { name: string; label: string; studentIds: string[] }[];
 }
 
 export interface ActiveDragData {
@@ -130,7 +130,7 @@ export function TimeSlotCell({
               return (
                 <div
                   key={`ext-${ext.providerName}-${i}`}
-                  title={`${ext.providerName}\n${timeRange}\n${ext.matchedNames.map((m) => m.name).join(', ')}`}
+                  title={`${ext.providerName}\n${timeRange}\n${ext.matchedNames.map((m) => m.label).join(', ')}`}
                   className={`${color.bg} ${color.border} border rounded px-1 py-0.5 text-[10px]`}
                 >
                   <div className={`font-medium ${color.text} truncate`}>
@@ -140,7 +140,7 @@ export function TimeSlotCell({
                     {ext.matchedNames.map((m, j) => (
                       <span key={j} className="inline-flex items-center gap-0.5">
                         {j > 0 && ', '}
-                        {m.name}
+                        {m.label}
                         {onExcludeStudent && m.studentIds.length > 0 && (
                           <button
                             onClick={(e) => {
@@ -148,7 +148,7 @@ export function TimeSlotCell({
                               onExcludeStudent(m.studentIds[0]);
                             }}
                             className="inline-flex items-center justify-center w-3 h-3 text-[8px] leading-none text-gray-400 hover:text-red-500 hover:bg-red-100 rounded-full"
-                            title={`Hide ${m.name} from overlay`}
+                            title={`Hide ${m.label} from overlay`}
                           >
                             ×
                           </button>
