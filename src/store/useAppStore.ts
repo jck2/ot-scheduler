@@ -240,15 +240,35 @@ export const useAppStore = create<AppState>((set, get) => ({
         // Normalize data saved by older versions so missing/renamed fields can't
         // crash rendering (e.g. a student without className, a session without
         // studentIds). Better to load a repaired schedule than white-screen.
+        const savedConfig = saved.config ?? {};
+        let config = { ...DEFAULT_CONFIG, ...savedConfig };
+        let sessions = (saved.sessions ?? []).map(sanitizeSession);
+
+        // One-time heal: before the "Show other providers' full week" toggle
+        // existed, the only way to see other providers on days the provider doesn't
+        // work was to add those days to the working-days set — which also made the
+        // scheduler place the provider there. Upgrading (toggle absent) with a
+        // working-days set wider than the default means the user did exactly that:
+        // restore the default working days, turn the view toggle on instead, and
+        // drop any sessions auto-placed on the days being removed.
+        if (savedConfig.showOtherProviderDays === undefined) {
+          const def = DEFAULT_CONFIG.activeDays;
+          const widened = (savedConfig.activeDays ?? def).some((d) => !def.includes(d));
+          if (widened) {
+            config = { ...config, activeDays: [...def], showOtherProviderDays: true };
+            sessions = sessions.filter((s) => def.includes(s.day));
+          }
+        }
+
         set({
           allStudents: (saved.allStudents ?? []).map(sanitizeStudent),
           students: (saved.students ?? []).map(sanitizeStudent),
           selectedProvider: saved.selectedProvider ?? DEFAULT_CONFIG.providerName,
-          sessions: (saved.sessions ?? []).map(sanitizeSession),
-          config: { ...DEFAULT_CONFIG, ...(saved.config ?? {}) },
+          sessions,
+          config,
           step: saved.step ?? 'upload',
           excludedStudentIds: saved.excludedStudentIds ?? [],
-          providerSchedules: saved.providerSchedules ?? [],
+          providerSchedules: (saved.providerSchedules ?? []).map(sanitizeProviderSchedule),
           amandaSheetName: saved.amandaSheetName ?? '',
           initialMappings: saved.initialMappings ?? [],
           conflicts: saved.conflicts ?? [],
@@ -343,6 +363,20 @@ function sanitizeSession(raw: Partial<ScheduledSession> | null | undefined): Sch
     studentIds,
     mandateIndices: s.mandateIndices && typeof s.mandateIndices === 'object' ? s.mandateIndices : {},
     locked: !!s.locked,
+  };
+}
+
+// Round any non-integer external-session times (e.g. a stale "1:22.5PM" parsed by
+// an older build) so the overlay can't render fractional minutes. A clean fix for
+// genuinely wrong stale times still needs the schedule to be re-uploaded.
+function sanitizeProviderSchedule(raw: ProviderSchedule): ProviderSchedule {
+  return {
+    ...raw,
+    sessions: (raw.sessions ?? []).map((s) => ({
+      ...s,
+      startTime: Math.round(s.startTime),
+      endTime: Math.round(s.endTime),
+    })),
   };
 }
 

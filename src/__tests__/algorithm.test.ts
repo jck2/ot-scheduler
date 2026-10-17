@@ -135,6 +135,22 @@ describe('generateSchedule', () => {
     }
   });
 
+  it('never schedules outside the active days (no hidden Wednesday overflow)', () => {
+    // More individual sessions than Mon/Tue/Thu can hold. Earlier builds spilled the
+    // overflow onto a hidden Wednesday fallback phase; the provider does not work
+    // Wednesday or Friday, so overflow must stay unplaced, never land off-days.
+    const students = Array.from({ length: 20 }, (_, i) =>
+      makeStudent(`Student${i}`, 'X', 'Honeylocust', String(100 + i), '3x30:1')
+    );
+    const schedule = generateSchedule(students, [], DEFAULT_CONFIG);
+
+    for (const s of schedule) {
+      expect(DEFAULT_CONFIG.activeDays).toContain(s.day);
+    }
+    expect(schedule.some((s) => s.day === 'Wednesday')).toBe(false);
+    expect(schedule.some((s) => s.day === 'Friday')).toBe(false);
+  });
+
   it('spreads sessions across different time slots', () => {
     const students = [
       makeStudent('Hugh', 'Fuccillo', 'Honeylocust', '001', '2x30:1'),

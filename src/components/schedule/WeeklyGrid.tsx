@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { minutesToTime, slotsOverlap } from '@/utils/timeUtils';
 import { dayIndex } from '@/utils/timeUtils';
-import { bandForStartTime, isExcludedProvider } from '@/utils/constants';
+import { ALL_DAYS, bandForStartTime, isExcludedProvider } from '@/utils/constants';
 import type { ExternalSession } from '@/types';
 import { buildNameIndex, matchExternalName } from '@/parsing/overlayMatcher';
 import { studentDisplayName } from '@/parsing/rosterParser';
@@ -30,10 +30,15 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
     [students]
   );
 
-  const sortedDays = useMemo(
-    () => [...config.activeDays].sort((a, b) => dayIndex(a) - dayIndex(b)),
-    [config.activeDays]
-  );
+  // Columns the grid renders. With the view-only toggle on, show the whole week so
+  // other providers' Wed/Fri sessions are visible; the extra (non-working) days are
+  // display-only — no provider cards, no drop target. Scheduling always uses
+  // config.activeDays regardless.
+  const activeDaySet = useMemo(() => new Set(config.activeDays), [config.activeDays]);
+  const sortedDays = useMemo(() => {
+    const days = config.showOtherProviderDays ? ALL_DAYS : config.activeDays;
+    return [...days].sort((a, b) => dayIndex(a) - dayIndex(b));
+  }, [config.showOtherProviderDays, config.activeDays]);
 
   // Generate time rows — extend start if external sessions begin before config.startTime
   const timeRows = useMemo(() => {
@@ -188,7 +193,10 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
 
               {/* Day cells */}
               {sortedDays.map((day) => {
-                const cellSessions = providerView === 'others'
+                // Non-working days (only shown for the other-provider overlay) never
+                // hold the provider's own sessions and can't be dropped onto.
+                const isWorkingDay = activeDaySet.has(day);
+                const cellSessions = !isWorkingDay || providerView === 'others'
                   ? []
                   : sessions.filter((s) => s.day === day && s.startTime === time);
 
@@ -209,6 +217,7 @@ export function WeeklyGrid({ activeDrag, onRemoveStudent }: WeeklyGridProps) {
                     providerColors={PROVIDER_COLORS}
                     onExcludeStudent={toggleExcludedStudent}
                     activeDrag={activeDrag}
+                    dropDisabled={!isWorkingDay}
                   />
                 );
               })}

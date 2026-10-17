@@ -2,7 +2,6 @@ import type { AppConfig, Conflict, ScheduledSession, Student, StudentRules, Time
 import { decomposeMandates, type SessionRequest } from '@/parsing/mandateParser';
 import { generateTimeSlots } from '@/utils/timeUtils';
 import {
-  checkActiveDay,
   checkNoCrossProviderConflict,
   checkNoDoubleBooking,
   checkProviderSlotFree,
@@ -68,19 +67,16 @@ export function generateSchedule(
   // Lunch and extended-hours penalties are handled by soft constraints.
   const sessions: ScheduledSession[] = [];
 
+  // The provider is only scheduled on the configured active days. (There used to be
+  // a hidden Wednesday overflow phase, but the provider doesn't work Wednesday or
+  // Friday — anything that can't fit the active days must stay unplaced and surface
+  // as an unmet-mandate warning, not get silently parked on an off-day.)
   const allSlots = generateTimeSlots(
     config.startTime,
     config.endTime,
     config.slotDuration,
     config.activeDays
   );
-
-  // Wednesday as a fallback if not already active
-  const wednesdaySlots = config.activeDays.includes('Wednesday')
-    ? []
-    : generateTimeSlots(config.startTime, 810, config.slotDuration, ['Wednesday']);
-
-  const slotPhases = [allSlots, wednesdaySlots];
 
   // Schedule grouped sessions first
   for (const group of grouped) {
@@ -90,7 +86,7 @@ export function generateSchedule(
       conflicts,
       config,
       studentMap,
-      slotPhases,
+      allSlots,
       rulesMap
     );
     if (scheduled) {
@@ -106,7 +102,7 @@ export function generateSchedule(
       conflicts,
       config,
       studentMap,
-      slotPhases,
+      allSlots,
       rulesMap
     );
     if (scheduled) {
@@ -235,58 +231,54 @@ function scheduleGroupedSession(
   conflicts: Conflict[],
   config: AppConfig,
   studentMap: Map<string, Student>,
-  slotPhases: TimeSlot[][],
+  slots: TimeSlot[],
   rulesMap: Map<string, StudentRules>
 ): ScheduledSession | null {
   const studentIds = group.map((r) => r.studentId);
   let bestSlot: TimeSlot | null = null;
   let bestPenalty = Infinity;
 
-  for (const slots of slotPhases) {
-    for (const slot of slots) {
-      // Hard constraints
-      const dayOk = checkActiveDay(slot.day, config);
-      if (!dayOk.satisfied && !slotPhases.indexOf(slots)) continue; // allow in relaxation phases
-      if (slot.day === 'Wednesday') {
-        const wedOk = checkWednesdayEnd(slot.day, slot.endTime);
-        if (!wedOk.satisfied) continue;
-      }
-
-      // Provider can only run one session per slot
-      const providerFree = checkProviderSlotFree(slot.day, slot.startTime, slot.endTime, existing);
-      if (!providerFree.satisfied) continue;
-
-      let allClear = true;
-      let penalty = 0;
-
-      for (const sid of studentIds) {
-        const db = checkNoDoubleBooking(sid, slot.day, slot.startTime, slot.endTime, existing);
-        if (!db.satisfied) { allClear = false; break; }
-
-        const cp = checkNoCrossProviderConflict(sid, slot.day, slot.startTime, slot.endTime, conflicts);
-        if (!cp.satisfied) { allClear = false; break; }
-
-        const avail = checkStudentAvailability(slot.day, slot.startTime, slot.endTime, rulesMap.get(sid), config);
-        if (!avail.satisfied) { allClear = false; break; }
-
-        penalty += scoreSameDayDouble(sid, slot.day, existing);
-      }
-
-      if (!allClear) continue;
-
-      const classCheck = checkSameClassGroup(studentIds, studentMap);
-      if (!classCheck.satisfied) continue;
-
-      penalty += scoreLunchPenalty(slot.startTime, slot.endTime, config);
-      penalty += scoreTimePenalty(slot.startTime, config);
-      penalty += scoreExtendedHours(slot.startTime, slot.endTime, config);
-
-      if (penalty < bestPenalty) {
-        bestPenalty = penalty;
-        bestSlot = slot;
-      }
+  for (const slot of slots) {
+    // Slots are already restricted to the active days; still cap Wednesday if it
+    // happens to be an active day.
+    if (slot.day === 'Wednesday') {
+      const wedOk = checkWednesdayEnd(slot.day, slot.endTime);
+      if (!wedOk.satisfied) continue;
     }
-    if (bestSlot) break; // Found a slot in this phase, no need to relax further
+
+    // Provider can only run one session per slot
+    const providerFree = checkProviderSlotFree(slot.day, slot.startTime, slot.endTime, existing);
+    if (!providerFree.satisfied) continue;
+
+    let allClear = true;
+    let penalty = 0;
+
+    for (const sid of studentIds) {
+      const db = checkNoDoubleBooking(sid, slot.day, slot.startTime, slot.endTime, existing);
+      if (!db.satisfied) { allClear = false; break; }
+
+      const cp = checkNoCrossProviderConflict(sid, slot.day, slot.startTime, slot.endTime, conflicts);
+      if (!cp.satisfied) { allClear = false; break; }
+
+      const avail = checkStudentAvailability(slot.day, slot.startTime, slot.endTime, rulesMap.get(sid), config);
+      if (!avail.satisfied) { allClear = false; break; }
+
+      penalty += scoreSameDayDouble(sid, slot.day, existing);
+    }
+
+    if (!allClear) continue;
+
+    const classCheck = checkSameClassGroup(studentIds, studentMap);
+    if (!classCheck.satisfied) continue;
+
+    penalty += scoreLunchPenalty(slot.startTime, slot.endTime, config);
+    penalty += scoreTimePenalty(slot.startTime, config);
+    penalty += scoreExtendedHours(slot.startTime, slot.endTime, config);
+
+    if (penalty < bestPenalty) {
+      bestPenalty = penalty;
+      bestSlot = slot;
+    }
   }
 
   if (!bestSlot) return null;
@@ -313,62 +305,59 @@ function scheduleIndividualSession(
   conflicts: Conflict[],
   config: AppConfig,
   _studentMap: Map<string, Student>,
-  slotPhases: TimeSlot[][],
+  slots: TimeSlot[],
   rulesMap: Map<string, StudentRules>
 ): ScheduledSession | null {
   let bestSlot: TimeSlot | null = null;
   let bestPenalty = Infinity;
 
-  for (const slots of slotPhases) {
-    for (const slot of slots) {
-      if (slot.day === 'Wednesday') {
-        const wedOk = checkWednesdayEnd(slot.day, slot.endTime);
-        if (!wedOk.satisfied) continue;
-      }
-
-      // Provider can only run one session per slot
-      const providerFree = checkProviderSlotFree(slot.day, slot.startTime, slot.endTime, existing);
-      if (!providerFree.satisfied) continue;
-
-      const db = checkNoDoubleBooking(
-        request.studentId,
-        slot.day,
-        slot.startTime,
-        slot.endTime,
-        existing
-      );
-      if (!db.satisfied) continue;
-
-      const cp = checkNoCrossProviderConflict(
-        request.studentId,
-        slot.day,
-        slot.startTime,
-        slot.endTime,
-        conflicts
-      );
-      if (!cp.satisfied) continue;
-
-      const avail = checkStudentAvailability(
-        slot.day,
-        slot.startTime,
-        slot.endTime,
-        rulesMap.get(request.studentId),
-        config
-      );
-      if (!avail.satisfied) continue;
-
-      let penalty = 0;
-      penalty += scoreLunchPenalty(slot.startTime, slot.endTime, config);
-      penalty += scoreTimePenalty(slot.startTime, config);
-      penalty += scoreExtendedHours(slot.startTime, slot.endTime, config);
-      penalty += scoreSameDayDouble(request.studentId, slot.day, existing);
-
-      if (penalty < bestPenalty) {
-        bestPenalty = penalty;
-        bestSlot = slot;
-      }
+  for (const slot of slots) {
+    if (slot.day === 'Wednesday') {
+      const wedOk = checkWednesdayEnd(slot.day, slot.endTime);
+      if (!wedOk.satisfied) continue;
     }
-    if (bestSlot) break;
+
+    // Provider can only run one session per slot
+    const providerFree = checkProviderSlotFree(slot.day, slot.startTime, slot.endTime, existing);
+    if (!providerFree.satisfied) continue;
+
+    const db = checkNoDoubleBooking(
+      request.studentId,
+      slot.day,
+      slot.startTime,
+      slot.endTime,
+      existing
+    );
+    if (!db.satisfied) continue;
+
+    const cp = checkNoCrossProviderConflict(
+      request.studentId,
+      slot.day,
+      slot.startTime,
+      slot.endTime,
+      conflicts
+    );
+    if (!cp.satisfied) continue;
+
+    const avail = checkStudentAvailability(
+      slot.day,
+      slot.startTime,
+      slot.endTime,
+      rulesMap.get(request.studentId),
+      config
+    );
+    if (!avail.satisfied) continue;
+
+    let penalty = 0;
+    penalty += scoreLunchPenalty(slot.startTime, slot.endTime, config);
+    penalty += scoreTimePenalty(slot.startTime, config);
+    penalty += scoreExtendedHours(slot.startTime, slot.endTime, config);
+    penalty += scoreSameDayDouble(request.studentId, slot.day, existing);
+
+    if (penalty < bestPenalty) {
+      bestPenalty = penalty;
+      bestSlot = slot;
+    }
   }
 
   if (!bestSlot) return null;

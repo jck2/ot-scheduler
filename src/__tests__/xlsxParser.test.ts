@@ -1,5 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { extractInCellTime } from '@/parsing/xlsxParser';
+import * as XLSX from 'xlsx';
+import { extractInCellTime, parseXlsx } from '@/parsing/xlsxParser';
+
+describe('parseXlsx — numeric time cells', () => {
+  // Build a one-sheet workbook whose time column holds raw numbers (not strings
+  // or sub-1 Excel time serials). A value like 13.375 means 1:22:30 PM in decimal
+  // hours; it must still produce an integer minute count, never 802.5.
+  function bufferFromRows(rows: (string | number)[][]): ArrayBuffer {
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Speech-Test');
+    // xlsx returns an ArrayBuffer for type:'array'
+    return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+  }
+
+  it('a non-whole-hour numeric time cell yields integer minutes', () => {
+    const buf = bufferFromRows([
+      ['Time', 'Monday', 'Tuesday'],
+      [13.375, 'Alex', ''],
+    ]);
+    const scheds = parseXlsx(buf);
+    const sess = scheds[0]?.sessions ?? [];
+    expect(sess.length).toBeGreaterThan(0);
+    for (const s of sess) {
+      expect(Number.isInteger(s.startTime)).toBe(true);
+      expect(Number.isInteger(s.endTime)).toBe(true);
+    }
+  });
+});
 
 describe('extractInCellTime', () => {
   it('extracts "5th Group 2 8:15-9" → start=495, end=540, cleaned="5th Group 2"', () => {

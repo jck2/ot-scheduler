@@ -211,9 +211,11 @@ function parseTimeCellValue(cell: string | number | null): { start: number; end:
       const start = parseExcelTime(cell);
       return applySchoolHourPmInference({ start, end: start + 30 });
     }
-    // Could be a whole hour like 8 or 9
+    // A number ≥ 1 is hours past midnight (e.g. 8 or 9, or a decimal like 13.375
+    // when a cell was typed as decimal hours). Round to whole minutes so a decimal
+    // hour never produces a fractional start like 802.5 ("1:22.5PM").
     if (cell >= 1 && cell <= 24) {
-      const start = cell * 60;
+      const start = Math.round(cell * 60);
       return applySchoolHourPmInference({ start, end: start + 30 });
     }
   }

@@ -99,6 +99,10 @@ export interface AppConfig {
   providerName: string;
   termStartDate?: string;
   termEndDate?: string;
+  // View-only: when true the grid also renders the weekdays the provider does NOT
+  // work (so other providers' sessions can be seen there). Does not affect
+  // scheduling, validation, or export — those always use activeDays.
+  showOtherProviderDays?: boolean;
 }
 
 export interface ValidationError {

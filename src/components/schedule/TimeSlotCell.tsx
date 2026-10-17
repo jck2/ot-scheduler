@@ -36,6 +36,7 @@ interface TimeSlotCellProps {
   providerColors: ProviderColor[];
   onExcludeStudent?: (studentId: string) => void;
   activeDrag: ActiveDragData | null;
+  dropDisabled?: boolean; // view-only day: no drop target, no hover feedback
 }
 
 export function TimeSlotCell({
@@ -51,9 +52,10 @@ export function TimeSlotCell({
   providerColors,
   onExcludeStudent,
   activeDrag,
+  dropDisabled = false,
 }: TimeSlotCellProps) {
   const droppableId = `${day}-${startTime}`;
-  const { setNodeRef, isOver } = useDroppable({ id: droppableId });
+  const { setNodeRef, isOver } = useDroppable({ id: droppableId, disabled: dropDisabled });
 
   const hasExternals = externalSessions.length > 0;
 
@@ -61,7 +63,7 @@ export function TimeSlotCell({
   // that would result is problematic (different class, over the size cap), hint in
   // amber — the drop still works and the validator explains the issue afterward.
   let dropClean: boolean | null = null; // null = no active hover
-  if (isOver && activeDrag) {
+  if (isOver && !dropDisabled && activeDrag) {
     dropClean = checkDropValid(activeDrag, sessions, studentMap);
   }
 

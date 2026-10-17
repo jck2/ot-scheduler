@@ -9,6 +9,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   lunchStart: 780, // 1:00pm
   lunchEnd: 840, // 2:00pm
   providerName: 'Amanda Huang',
+  showOtherProviderDays: false,
 };
 
 export const ALL_DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];

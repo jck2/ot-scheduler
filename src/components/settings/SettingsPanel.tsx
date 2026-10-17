@@ -67,7 +67,7 @@ export function SettingsPanel() {
   return (
     <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
       <div className="flex items-center gap-2">
-        <span className="text-gray-600 font-medium">Days:</span>
+        <span className="text-gray-600 font-medium" title="Days the provider works — the scheduler only places sessions on these">Working days:</span>
         {ALL_DAYS.map((day) => (
           <label key={day} className="flex items-center gap-1 cursor-pointer">
             <input
@@ -80,6 +80,15 @@ export function SettingsPanel() {
           </label>
         ))}
       </div>
+      <label className="flex items-center gap-1.5 cursor-pointer" title="Also show the other weekdays so you can see other providers' sessions there. View only — the provider is never scheduled on non-working days.">
+        <input
+          type="checkbox"
+          checked={config.showOtherProviderDays ?? false}
+          onChange={(e) => updateConfig({ showOtherProviderDays: e.target.checked })}
+          className="rounded text-indigo-600"
+        />
+        <span className="text-gray-700">Show other providers' full week</span>
+      </label>
       <div className="flex items-center gap-2">
         <span className="text-gray-600 font-medium" title="Earliest available slot">Start:</span>
         <input

@@ -83,6 +83,23 @@ place each in the lowest-penalty free slot. Hard constraints in
 `src/scheduling/constraints.ts`; validation (mandate fulfillment, double-booking,
 class-mixing, etc.) in `src/scheduling/validator.ts`.
 
+**The scheduler only places sessions on `config.activeDays`** — the provider's
+working days (default Mon/Tue/Thu). There is no hidden overflow day: a request that
+can't fit the active days stays unplaced and shows as an unmet-mandate warning,
+never gets parked on an off-day. (An earlier build silently spilled overflow onto
+Wednesday; removed.)
+
+**Working days vs. view-only days.** `config.activeDays` is the provider's working
+days and drives scheduling, validation, and export. `config.showOtherProviderDays`
+(default false, toggled in `SettingsPanel`) is **view-only**: when on, `WeeklyGrid`
+renders the whole week so other providers' sessions on the non-working days (Wed/Fri)
+are visible. Those extra columns show the overlay only — no provider cards, no drop
+target (`TimeSlotCell` `dropDisabled`). Do NOT widen `activeDays` to show other
+providers on more days — that reintroduces the bug where the provider got scheduled
+on days she doesn't work. `loadFromStorage` has a one-time heal: upgrading from a
+pre-toggle build with a widened `activeDays` restores the default working days, turns
+the view toggle on, and drops sessions that were auto-placed on the removed days.
+
 ## File formats — IMPORTANT (this is where uploads break)
 
 The roster CSV comes in two shapes, and **`parseRosterCSV` now handles both**
@@ -163,7 +180,15 @@ The XLSX parser (`xlsxParser.ts`) is heuristic and tolerant: it scans each sheet
 a header row containing ≥2 day names, finds the time column, reads student
 names/initials out of day cells (handling in-cell time ranges, sidebar group
 definitions, group references, skip-cells like "LUNCH"/"PREP"). Sheets named
-"Provider Info"/"…info" are skipped. Provider = sheet name.
+"Provider Info"/"…info" are skipped. Provider = sheet name. Numeric time cells are
+normalized to whole minutes: sub-1 Excel serials via `parseExcelTime` (rounds), and
+`≥1` values (hours past midnight, incl. decimal hours like 13.375) via
+`Math.round(cell*60)` — so a cell never yields a fractional start like 802.5
+("1:22.5PM"). `providerSchedules` is **persisted** and restored verbatim (not
+re-parsed), so external-session times parsed by an older build survive until the
+schedule is **re-uploaded**; `loadFromStorage` rounds any stale fractional times on
+load so the overlay can't show fractional minutes, but genuinely wrong stale times
+need a re-upload to fully fix.
 
 ## Gotchas / known issues
 
