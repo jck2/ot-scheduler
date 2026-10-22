@@ -270,7 +270,7 @@ export function buildProviderIcs(
       day: ext.day,
       startTime: ext.startTime,
       endTime: ext.endTime,
-      summary: names,
+      summary: `${schedule.providerName}: ${names}`,
       description: `${schedule.providerName}\n${names}`,
     });
   }

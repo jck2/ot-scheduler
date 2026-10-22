@@ -116,7 +116,7 @@ describe('buildProviderIcs', () => {
     ]);
     const ics = buildProviderIcs(ps, roster, undefined, undefined, NOW)!;
     expect(ics).toContain('BEGIN:VEVENT');
-    expect(ics).toContain('SUMMARY:Ana B.');
+    expect(ics).toContain('SUMMARY:Speech - Jane Doe: Ana B.');
     expect(ics).not.toContain('Zed');
     expect(ics).toContain('DTSTART;TZID=America/New_York:20261012T090000');
     expect(ics).toContain('DESCRIPTION:Speech - Jane Doe');
