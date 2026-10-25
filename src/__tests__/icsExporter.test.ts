@@ -116,10 +116,21 @@ describe('buildProviderIcs', () => {
     ]);
     const ics = buildProviderIcs(ps, roster, undefined, undefined, NOW)!;
     expect(ics).toContain('BEGIN:VEVENT');
-    expect(ics).toContain('SUMMARY:Speech - Jane Doe: Ana B.');
+    // Title: provider FIRST name + student first name (no last initial — "Ana" is
+    // the only Ana on the roster). Description keeps the full provider name.
+    expect(ics).toContain('SUMMARY:Jane: Ana');
     expect(ics).not.toContain('Zed');
     expect(ics).toContain('DTSTART;TZID=America/New_York:20261012T090000');
     expect(ics).toContain('DESCRIPTION:Speech - Jane Doe');
+  });
+
+  it('adds a last initial only when two roster students share a first name', () => {
+    const roster2 = [student('Asa', 'Demby', 'a'), student('Asa', 'Penrose', 'b')];
+    const ps = provider('Sonja Douglas', [
+      { day: 'Monday', startTime: 540, endTime: 570, studentNames: ['Asa D.'], rawText: 'x' },
+    ]);
+    const ics = buildProviderIcs(ps, roster2, undefined, undefined, NOW)!;
+    expect(ics).toContain('SUMMARY:Sonja: Asa D.');
   });
 
   it('returns null when none of the provider\'s students are on the roster', () => {

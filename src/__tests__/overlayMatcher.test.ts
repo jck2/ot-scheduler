@@ -24,6 +24,7 @@ const roster = [
   s('Alexander', 'Smith', 'a6'),
   s('Asa', 'Demby', 'a7'),
   s('Asa', 'Penrose', 'a8'),
+  s('Magritte', 'Mittnacht', 'a9'),
 ];
 const index = buildNameIndex(roster);
 const match = (name: string) => matchExternalName(name, index);
@@ -96,5 +97,17 @@ describe('overlayMatcher — prefix fallback, not substring', () => {
 
   it('does NOT match a token merely contained mid-name', () => {
     expect(match('lex')).toEqual([]); // "lex" is inside "Alexander" but not a prefix
+  });
+});
+
+describe('overlayMatcher — go-by name aliases', () => {
+  it('"Malu" resolves to Magritte Mittnacht (same student, different name)', () => {
+    expect(match('Malu')).toEqual(['a9']);
+  });
+  it('"Malu M." (with last initial) also resolves to Magritte', () => {
+    expect(match('Malu M.')).toEqual(['a9']);
+  });
+  it('the real first name "Magritte" still matches', () => {
+    expect(match('Magritte')).toEqual(['a9']);
   });
 });

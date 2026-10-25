@@ -204,6 +204,33 @@ export function buildCalendar(
   return lines.join('\r\n') + '\r\n';
 }
 
+// A provider's go-by first name for the event title. Strips a leading service/category
+// prefix ("Speech - Jane Doe" → "Jane Doe", "OT- Christina" → "Christina", with or
+// without spaces around the dash), then takes the first word.
+function providerFirstName(name: string): string {
+  const stripped = name.replace(/^[A-Za-z]+\s*[-–—]\s*/, '').trim();
+  return stripped.split(/\s+/)[0] || name;
+}
+
+// Display names for a set of roster students: first name only, with a last initial
+// added ONLY for first names shared by more than one roster student (so "Asa" stays
+// unambiguous as "Asa D." / "Asa P."). Keeps titles short for phone calendars.
+function shortStudentNames(ids: string[], students: Student[], studentMap: Map<string, Student>): string {
+  const firstNameCounts = new Map<string, number>();
+  for (const s of students) {
+    const key = s.firstName.toLowerCase().trim();
+    firstNameCounts.set(key, (firstNameCounts.get(key) ?? 0) + 1);
+  }
+  return ids
+    .map((id) => {
+      const s = studentMap.get(id);
+      if (!s) return id;
+      const shared = (firstNameCounts.get(s.firstName.toLowerCase().trim()) ?? 0) > 1;
+      return shared ? `${s.firstName} ${s.lastName.charAt(0)}.` : s.firstName;
+    })
+    .join(', ');
+}
+
 function studentNames(session: ScheduledSession, studentMap: Map<string, Student>): string {
   return session.studentIds
     .map((id) => {
@@ -259,18 +286,13 @@ export function buildProviderIcs(
     }
     if (matchedIds.size === 0) continue; // no roster students in this session → skip
 
-    const names = [...matchedIds]
-      .map((id) => {
-        const s = studentMap.get(id);
-        return s ? `${s.firstName} ${s.lastName.charAt(0)}.` : id;
-      })
-      .join(', ');
+    const names = shortStudentNames([...matchedIds], students, studentMap);
 
     events.push({
       day: ext.day,
       startTime: ext.startTime,
       endTime: ext.endTime,
-      summary: `${schedule.providerName}: ${names}`,
+      summary: `${providerFirstName(schedule.providerName)}: ${names}`,
       description: `${schedule.providerName}\n${names}`,
     });
   }

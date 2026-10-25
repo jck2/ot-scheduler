@@ -24,6 +24,15 @@ const NON_STUDENT_TOKENS = new Set([
   'pi', 'po', 'rvp', 'push', 'pull', 'group',
 ]);
 
+// Go-by names that don't share a prefix with the student's roster first name, so
+// none of the fuzzy branches below (prefix, initials) can ever catch them. Maps an
+// alias as it appears in another provider's schedule to the roster first name it
+// refers to. One student, two names: Magritte Mittnacht goes by "Malu" on some
+// providers' schedules (e.g. Sonja's), so "Malu" must resolve to Magritte.
+const FIRST_NAME_ALIASES = new Map<string, string>([
+  ['malu', 'magritte'],
+]);
+
 export function buildNameIndex(students: Student[]): NameIndex {
   const firstNameIndex = new Map<string, Student[]>();
   const fullNameIndex = new Map<string, Student>();
@@ -88,9 +97,12 @@ export function matchExternalName(rawName: string, index: NameIndex): string[] {
   const words = cleaned.split(/\s+/);
   const firstWord = words[0].replace(/\.$/, '');
   const rest = words.slice(1).join(' ').replace(/\./g, '').trim();
+  // Resolve a go-by alias ("malu" → "magritte") before the first-name lookup so an
+  // aliased token matches the roster student the same as her real first name would.
+  const aliasedFirst = FIRST_NAME_ALIASES.get(firstWord) ?? firstWord;
   const byFirst =
-    firstNameIndex.get(cleaned) ??
-    (firstWord.length >= 2 ? firstNameIndex.get(firstWord) : undefined);
+    firstNameIndex.get(FIRST_NAME_ALIASES.get(cleaned) ?? cleaned) ??
+    (aliasedFirst.length >= 2 ? firstNameIndex.get(aliasedFirst) : undefined);
   if (byFirst && byFirst.length > 0) {
     if (byFirst.length === 1) return [byFirst[0].osisNumber];
     // Multiple students share this first name (e.g. two "Asa"s). Use the rest of
