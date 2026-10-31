@@ -52,10 +52,10 @@ describe('buildIcs', () => {
     expect(ics).toMatch(/DTEND;TZID=America\/New_York:\d{8}T093000\r\n/);
   });
 
-  it('anchors recurrence to the Monday on/after the export date', () => {
-    // NOW = Wed Oct 7 2026 → upcoming Monday = Oct 12; a Thursday session → Oct 15.
+  it('backdates the recurrence to this week\'s Monday for a weekday export', () => {
+    // NOW = Wed Oct 7 2026 → this week's Monday = Oct 5; a Thursday session → Oct 8.
     const ics = buildIcs([session('s1', 'Thursday', 600, ['a'])], students, undefined, undefined, NOW);
-    expect(ics).toContain('DTSTART;TZID=America/New_York:20261015T100000');
+    expect(ics).toContain('DTSTART;TZID=America/New_York:20261008T100000');
   });
 
   it('ignores a stale (past) term start and end', () => {
@@ -67,7 +67,7 @@ describe('buildIcs', () => {
       '2026-06-26',
       NOW
     );
-    expect(ics).toContain('DTSTART;TZID=America/New_York:20261012T090000');
+    expect(ics).toContain('DTSTART;TZID=America/New_York:20261005T090000');
     // Default end-of-school-year UNTIL (June 30 2027), in UTC.
     expect(ics).toContain('UNTIL=20270630T235959Z');
   });
@@ -120,7 +120,7 @@ describe('buildProviderIcs', () => {
     // the only Ana on the roster). Description keeps the full provider name.
     expect(ics).toContain('SUMMARY:Jane: Ana');
     expect(ics).not.toContain('Zed');
-    expect(ics).toContain('DTSTART;TZID=America/New_York:20261012T090000');
+    expect(ics).toContain('DTSTART;TZID=America/New_York:20261005T090000');
     expect(ics).toContain('DESCRIPTION:Speech - Jane Doe');
   });
 
@@ -148,6 +148,23 @@ describe('buildProviderIcs', () => {
   });
 });
 
+describe('recurrence anchor — weekday backdates, weekend looks ahead', () => {
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const anchor = (now: Date) => iso(recurrenceWindow(undefined, undefined, now).start);
+
+  it('a weekday export backdates to this week\'s Monday', () => {
+    expect(anchor(new Date(2026, 9, 5))).toBe('2026-10-05'); // Mon → itself
+    expect(anchor(new Date(2026, 9, 7))).toBe('2026-10-05'); // Wed → Mon Oct 5
+    expect(anchor(new Date(2026, 9, 9))).toBe('2026-10-05'); // Fri → Mon Oct 5
+  });
+
+  it('a weekend export anchors to the upcoming Monday', () => {
+    expect(anchor(new Date(2026, 9, 10))).toBe('2026-10-12'); // Sat → Mon Oct 12
+    expect(anchor(new Date(2026, 9, 11))).toBe('2026-10-12'); // Sun → Mon Oct 12
+  });
+});
+
 describe('README', () => {
   it('states the real recurrence window and lists the calendar files', () => {
     const { start, end } = recurrenceWindow(undefined, undefined, NOW); // NOW = Wed Oct 7 2026
@@ -159,7 +176,7 @@ describe('README', () => {
     );
     expect(readme).toContain('Amanda-Huang.ics');
     expect(readme).toContain('Speech.ics');
-    expect(readme).toContain('October 12, 2026'); // first Monday on/after export
+    expect(readme).toContain('October 5, 2026'); // weekday export → this week's Monday
     expect(readme).toContain('June 30, 2027'); // default school-year end
     expect(readme).toMatch(/delete the (old|previous)/i);
     expect(readme).toMatch(/Import & export/);

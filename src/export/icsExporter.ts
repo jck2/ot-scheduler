@@ -46,12 +46,16 @@ function atMidnight(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-// The Monday on or after `from` — the default recurrence anchor, so a freshly
-// exported schedule starts this coming week rather than on a stale configured date.
-function upcomingMonday(from: Date): Date {
-  const diff = (DAY_NUM.Monday - from.getDay() + 7) % 7;
+// The default recurrence anchor Monday. Exporting on a WEEKDAY (Mon–Fri) backdates to
+// THIS week's Monday, so a mid-week export already covers the days earlier in the
+// current week. Exporting on a WEEKEND (Sat/Sun) anchors to the UPCOMING Monday, since
+// the current school week is over.
+function anchorMonday(from: Date): Date {
+  const day = from.getDay(); // 0 = Sun, 1 = Mon, … 6 = Sat
   const d = atMidnight(from);
-  d.setDate(d.getDate() + diff);
+  if (day === 6) d.setDate(d.getDate() + 2); // Saturday → next Monday
+  else if (day === 0) d.setDate(d.getDate() + 1); // Sunday → next Monday
+  else d.setDate(d.getDate() - (day - 1)); // Mon–Fri → this week's Monday
   return d;
 }
 
@@ -147,7 +151,7 @@ export function recurrenceWindow(
 ): { start: Date; end: Date } {
   const today = atMidnight(now);
   const parsedStart = parseLocalDate(termStart);
-  const start = parsedStart && parsedStart >= today ? parsedStart : upcomingMonday(today);
+  const start = parsedStart && parsedStart >= today ? parsedStart : anchorMonday(today);
   const parsedEnd = parseLocalDate(termEnd);
   const end = parsedEnd && parsedEnd > start ? parsedEnd : schoolYearEnd(start);
   return { start, end };
@@ -360,8 +364,10 @@ November daylight-saving change.
 
 HOW THE DATES WORK  (please read)
 ---------------------------------
-The events recur WEEKLY starting the Monday on or after the day you exported.
-For this export that means:
+The events recur WEEKLY. If you export on a weekday, the first week starts on the
+Monday of that same week, so any sessions earlier in the current week are included.
+If you export on a weekend, it starts on the upcoming Monday. For this export that
+means:
 
   First week:  ${longDate(start)}
   Repeats weekly through:  ${longDate(end)}
