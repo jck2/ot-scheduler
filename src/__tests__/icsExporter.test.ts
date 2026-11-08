@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { buildIcs, buildProviderIcs, buildReadme, recurrenceWindow } from '@/export/icsExporter';
+import { strFromU8 } from 'fflate';
+import {
+  buildIcs,
+  buildProviderIcs,
+  buildReadme,
+  buildScheduleZipFiles,
+  recurrenceWindow,
+} from '@/export/icsExporter';
+import { DEFAULT_CONFIG } from '@/utils/constants';
 import type { ProviderSchedule, ScheduledSession, Student } from '@/types';
 
 function student(first: string, last: string, osis: string): Student {
@@ -145,6 +153,50 @@ describe('buildProviderIcs', () => {
       { day: 'Monday', startTime: 540, endTime: 570, studentNames: [], rawText: '' },
     ]);
     expect(buildProviderIcs(ps, roster, undefined, undefined, NOW)).toBeNull();
+  });
+});
+
+describe('buildScheduleZipFiles — all-in-one calendar', () => {
+  const roster = [student('Ana', 'Brown', 'a'), student('Ben', 'Cole', 'b')];
+  const own = [session('s1', 'Monday', 540, ['a']), session('s2', 'Tuesday', 600, ['b'])];
+  const sonja: ProviderSchedule = {
+    providerName: 'Speech-Sonja Douglas',
+    sheetName: 'Speech-Sonja Douglas',
+    sessions: [
+      { day: 'Wednesday', startTime: 540, endTime: 570, studentNames: ['Ana'], rawText: 'x' },
+    ],
+  };
+  const outsider: ProviderSchedule = {
+    providerName: 'PT-Rosa Perez',
+    sheetName: 'PT-Rosa Perez',
+    sessions: [
+      { day: 'Friday', startTime: 540, endTime: 570, studentNames: ['Zed Q.'], rawText: 'x' },
+    ],
+  };
+  const count = (ics: string) => (ics.match(/BEGIN:VEVENT/g) ?? []).length;
+
+  it('adds one file holding every event from the separate calendars', () => {
+    const files = buildScheduleZipFiles(own, roster, [sonja, outsider], null, DEFAULT_CONFIG, NOW);
+    expect(Object.keys(files).sort()).toEqual(
+      ['All-Schedules.ics', 'Amanda-Huang.ics', 'READ ME FIRST.txt', 'Speech-Sonja-Douglas.ics'].sort()
+    );
+    const combined = strFromU8(files['All-Schedules.ics']);
+    expect(count(combined)).toBe(3); // 2 own + 1 Sonja; Rosa has no roster students
+    expect(combined).toContain('SUMMARY:OT: Ana B.');
+    expect(combined).toContain('SUMMARY:Sonja: Ana');
+    expect(combined.match(/BEGIN:VCALENDAR/g)).toHaveLength(1);
+    expect(combined.match(/BEGIN:VTIMEZONE/g)).toHaveLength(1);
+    const uids = [...combined.matchAll(/^UID:(.+)$/gm)].map((m) => m[1]);
+    expect(new Set(uids).size).toBe(3);
+    const readme = strFromU8(files['READ ME FIRST.txt']);
+    expect(readme).toContain('All-Schedules.ics');
+    expect(readme).toMatch(/not both/i);
+  });
+
+  it('skips the all-in-one file when there is only the user\'s own calendar', () => {
+    const files = buildScheduleZipFiles(own, roster, [outsider], null, DEFAULT_CONFIG, NOW);
+    expect(Object.keys(files).sort()).toEqual(['Amanda-Huang.ics', 'READ ME FIRST.txt']);
+    expect(strFromU8(files['READ ME FIRST.txt'])).not.toContain('ALL-IN-ONE');
   });
 });
 

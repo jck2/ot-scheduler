@@ -244,16 +244,10 @@ function studentNames(session: ScheduledSession, studentMap: Map<string, Student
     .join(', ');
 }
 
-// The provider's own schedule (the one being built in the app).
-export function buildIcs(
-  sessions: ScheduledSession[],
-  students: Student[],
-  termStart?: string,
-  termEnd?: string,
-  now: Date = new Date()
-): string {
+// Events for the provider's own schedule (the one being built in the app).
+function ownEvents(sessions: ScheduledSession[], students: Student[]): IcsEvent[] {
   const studentMap = new Map(students.map((s) => [s.osisNumber, s]));
-  const events: IcsEvent[] = sessions.map((session) => {
+  return sessions.map((session) => {
     const names = studentNames(session, studentMap);
     return {
       day: session.day,
@@ -263,22 +257,26 @@ export function buildIcs(
       description: `Students: ${names}`,
     };
   });
-  return buildCalendar(events, termStart, termEnd, now);
 }
 
-// Another provider's schedule, parsed from the master workbook. Only the students who
-// are on the user's roster are included — every provider sees many students, but the
-// user only cares about (and should only get a calendar for) her own. External names
-// are matched to roster students with the same overlay matcher the grid uses, and
-// shown by their roster name (First L.). Returns null when none of this provider's
-// sessions involve a roster student, so that provider gets no file in the zip.
-export function buildProviderIcs(
-  schedule: ProviderSchedule,
+// The provider's own schedule as a calendar.
+export function buildIcs(
+  sessions: ScheduledSession[],
   students: Student[],
   termStart?: string,
   termEnd?: string,
   now: Date = new Date()
-): string | null {
+): string {
+  return buildCalendar(ownEvents(sessions, students), termStart, termEnd, now);
+}
+
+// Events for another provider's schedule, parsed from the master workbook. Only the
+// students who are on the user's roster are included — every provider sees many
+// students, but the user only cares about her own. External names are matched to
+// roster students with the same overlay matcher the grid uses, and shown by their
+// roster first name (plus last initial when the first name is shared). Sessions with
+// no roster student are dropped, so the result can be empty.
+function providerEvents(schedule: ProviderSchedule, students: Student[]): IcsEvent[] {
   const nameIndex = buildNameIndex(students);
   const studentMap = new Map(students.map((s) => [s.osisNumber, s]));
 
@@ -300,6 +298,19 @@ export function buildProviderIcs(
       description: `${schedule.providerName}\n${names}`,
     });
   }
+  return events;
+}
+
+// Another provider's schedule as a calendar. Returns null when none of this
+// provider's sessions involve a roster student, so that provider gets no file.
+export function buildProviderIcs(
+  schedule: ProviderSchedule,
+  students: Student[],
+  termStart?: string,
+  termEnd?: string,
+  now: Date = new Date()
+): string | null {
+  const events = providerEvents(schedule, students);
   if (events.length === 0) return null; // provider pulls none of her students → no file
   return buildCalendar(events, termStart, termEnd, now);
 }
@@ -342,14 +353,30 @@ function longDate(d: Date): string {
 }
 
 // Plain-text setup guide bundled in the zip. Human-facing, so it's written in normal
-// prose (not the terse style used in chat). `calendarFiles` is [filename, label] pairs.
+// prose (not the terse style used in chat). `calendarFiles` is [filename, label] pairs;
+// `combinedFile` is the all-in-one file's name, when the zip has one.
 export function buildReadme(
   calendarFiles: [string, string][],
   now: Date,
   start: Date,
-  end: Date
+  end: Date,
+  combinedFile?: string
 ): string {
   const fileList = calendarFiles.map(([file, label]) => `  - ${file}  (${label})`).join('\n');
+  const combinedSection = combinedFile
+    ? `
+Plus one ALL-IN-ONE file with every session above in a single calendar:
+  - ${combinedFile}
+
+Pick ONE way to import, not both, or every session will show up twice:
+  A) The separate files, one calendar per person. You can show or hide each
+     person on their own.
+  B) Only ${combinedFile}, everything in one calendar. Quicker to set up, and
+     there's just one calendar to delete when you re-export.
+In the all-in-one file, your own sessions start with "OT:" and each other
+provider's sessions start with their first name (e.g. "Sonja: Ana").
+`
+    : '';
   return `OT SCHEDULE — CALENDAR FILES
 Exported ${longDate(now)}
 
@@ -357,9 +384,9 @@ WHAT'S IN THIS ZIP
 ------------------
 One calendar file (.ics) per person:
 ${fileList}
-
-Each file holds that person's weekly sessions as recurring events, in Eastern
-time (America/New_York). They stay at the correct clock time even after the
+${combinedSection}
+Each file holds weekly sessions as recurring events, in Eastern time
+(America/New_York). They stay at the correct clock time even after the
 November daylight-saving change.
 
 HOW THE DATES WORK  (please read)
@@ -389,7 +416,8 @@ Do this on a computer (the phone app can't import files).
 2. Import a file:
    Settings (gear icon) > "Import & export" > "Import".
    Choose one .ics file, then under "Add to calendar" pick the calendar you made
-   for it, then click "Import". Repeat for each .ics file (one at a time).
+   for it, then click "Import". Repeat for each .ics file (one at a time). If you
+   chose the all-in-one file, there's only one file to import.
 
 BEFORE YOU IMPORT A NEW VERSION — DELETE THE OLD ONE
 ----------------------------------------------------
@@ -413,8 +441,58 @@ yourself in step 1.
 `;
 }
 
-// Export a zip with one .ics per calendar: the provider's own schedule first, then
-// one for each other provider found in the master workbook, plus a README.
+export const COMBINED_FILE_BASE = 'All-Schedules';
+
+// The zip's contents: one .ics per calendar (the provider's own schedule first, then
+// one for each other provider in the master workbook with ≥1 roster student), an
+// all-in-one .ics holding every one of those events (only when there are 2+
+// calendars — with just one it would duplicate that file), and a README.
+export function buildScheduleZipFiles(
+  sessions: ScheduledSession[],
+  students: Student[],
+  providerSchedules: ProviderSchedule[],
+  amandaSheetName: string | null,
+  config: AppConfig,
+  now: Date = new Date()
+): Record<string, Uint8Array> {
+  const { termStartDate: termStart, termEndDate: termEnd } = config;
+  const files: Record<string, Uint8Array> = {};
+  const used = new Set<string>();
+  const calendarFiles: [string, string][] = [];
+  const allEvents: IcsEvent[] = [];
+
+  // The user's own schedule.
+  const own = ownEvents(sessions, students);
+  const ownLabel = config.providerName || 'My Schedule';
+  const ownName = uniqueFileName(ownLabel, used);
+  files[ownName] = strToU8(buildCalendar(own, termStart, termEnd, now));
+  calendarFiles.push([ownName, `your schedule — ${ownLabel}`]);
+  allEvents.push(...own);
+
+  // Every other provider from the master workbook.
+  for (const ps of providerSchedules) {
+    if (amandaSheetName && ps.sheetName === amandaSheetName) continue;
+    if (isExcludedProvider(ps.sheetName, ps.providerName)) continue;
+    const events = providerEvents(ps, students);
+    if (events.length === 0) continue; // pulls none of her students → no file
+    const name = uniqueFileName(ps.providerName || ps.sheetName, used);
+    files[name] = strToU8(buildCalendar(events, termStart, termEnd, now));
+    calendarFiles.push([name, ps.providerName || ps.sheetName]);
+    allEvents.push(...events);
+  }
+
+  let combinedName: string | undefined;
+  if (calendarFiles.length > 1) {
+    combinedName = uniqueFileName(COMBINED_FILE_BASE, used);
+    files[combinedName] = strToU8(buildCalendar(allEvents, termStart, termEnd, now));
+  }
+
+  const { start, end } = recurrenceWindow(termStart, termEnd, now);
+  files['READ ME FIRST.txt'] = strToU8(buildReadme(calendarFiles, now, start, end, combinedName));
+  return files;
+}
+
+// Download the zip built by buildScheduleZipFiles.
 export function exportAllSchedulesZip(
   sessions: ScheduledSession[],
   students: Student[],
@@ -422,32 +500,7 @@ export function exportAllSchedulesZip(
   amandaSheetName: string | null,
   config: AppConfig
 ): void {
-  const files: Record<string, Uint8Array> = {};
-  const used = new Set<string>();
-  const calendarFiles: [string, string][] = [];
-
-  // The user's own schedule.
-  const ownIcs = buildIcs(sessions, students, config.termStartDate, config.termEndDate);
-  const ownLabel = config.providerName || 'My Schedule';
-  const ownName = uniqueFileName(ownLabel, used);
-  files[ownName] = strToU8(ownIcs);
-  calendarFiles.push([ownName, `your schedule — ${ownLabel}`]);
-
-  // Every other provider from the master workbook.
-  for (const ps of providerSchedules) {
-    if (amandaSheetName && ps.sheetName === amandaSheetName) continue;
-    if (isExcludedProvider(ps.sheetName, ps.providerName)) continue;
-    const ics = buildProviderIcs(ps, students, config.termStartDate, config.termEndDate);
-    if (!ics) continue;
-    const name = uniqueFileName(ps.providerName || ps.sheetName, used);
-    files[name] = strToU8(ics);
-    calendarFiles.push([name, ps.providerName || ps.sheetName]);
-  }
-
-  const now = new Date();
-  const { start, end } = recurrenceWindow(config.termStartDate, config.termEndDate, now);
-  files['READ ME FIRST.txt'] = strToU8(buildReadme(calendarFiles, now, start, end));
-
+  const files = buildScheduleZipFiles(sessions, students, providerSchedules, amandaSheetName, config);
   const zipped = zipSync(files, { level: 6 });
   // Copy into a fresh ArrayBuffer-backed view so Blob gets a clean buffer.
   triggerDownload(new Blob([zipped.slice()], { type: 'application/zip' }), 'schedules.zip');

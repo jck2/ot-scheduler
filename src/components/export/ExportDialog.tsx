@@ -76,7 +76,7 @@ export function ExportDialog() {
           <p className="text-sm text-gray-500 mt-1">
             One .ics per calendar — your schedule
             {otherProviderCount > 0
-              ? ` plus ${otherProviderCount} other provider${otherProviderCount === 1 ? '' : 's'}`
+              ? ` plus ${otherProviderCount} other provider${otherProviderCount === 1 ? '' : 's'}, and an all-in-one file with everyone in a single calendar`
               : ''}
             . Recurring weekly events for Google Calendar, Outlook, etc.
           </p>
